@@ -1,0 +1,4 @@
+// Файл-маркер: одна непустая строка = одно OR-условие; строки с // — комментарии.
+=== CHARACTER CREATION ===
+You are creating a brand-new NPC who will appear in the world
+They must match role_title, culture, age, traits, and skills from the same JSON response

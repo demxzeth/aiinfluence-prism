@@ -1,0 +1,7 @@
+// Файл-маркер: одна непустая строка = одно OR-условие; строки с // — комментарии.
+### Group conversation ###
+[Exchange
+WARNING: conversation interrupted. Someone else in the scene just said
+## Group: participant ids for kingdom actions
+WARNING: this is your last allowed exchange
+The conversation is winding down. Start steering it toward an end.

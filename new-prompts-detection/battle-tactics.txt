@@ -1,0 +1,4 @@
+// Файл-маркер: одна непустая строка = одно OR-условие; строки с // — комментарии.
+# BATTLE ORDER INTERPRETER
+Charge a SPECIFIC enemy formation
+Different soldiers react differently
