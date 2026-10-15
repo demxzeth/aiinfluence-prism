@@ -30,6 +30,7 @@ namespace AIInfluencePrism.Transport
         private static readonly OllamaTransport Ollama = new OllamaTransport();
         private static readonly KoboldCppTransport Kobold = new KoboldCppTransport();
         private static readonly Player2Transport Player2 = new Player2Transport();
+        private static readonly AntigravityTransport Antigravity = new AntigravityTransport();
 
         static Pipeline()
         {
@@ -41,6 +42,8 @@ namespace AIInfluencePrism.Transport
         {
             switch (kind)
             {
+                case ProviderKind.Nvidia:
+                case ProviderKind.Custom:
                 case ProviderKind.OpenAiCompat: return OpenAiPlain;
                 case ProviderKind.OpenAiSse: return OpenAiStream;
                 case ProviderKind.Anthropic: return Anthropic;
@@ -48,6 +51,7 @@ namespace AIInfluencePrism.Transport
                 case ProviderKind.Ollama: return Ollama;
                 case ProviderKind.KoboldCpp: return Kobold;
                 case ProviderKind.Player2: return Player2;
+                case ProviderKind.Antigravity: return Antigravity;
                 default: return Player2;
             }
         }
@@ -78,7 +82,8 @@ namespace AIInfluencePrism.Transport
         /// diagnostic error message).
         /// </summary>
         public static async Task<string> SendAsync(
-            TargetRole role, ScopeId scope, string prompt, int cachePrefix, MethodBase originalMethod)
+            TargetRole role, ScopeId scope, string prompt, int cachePrefix, MethodBase originalMethod,
+            string splitSystem = null, string splitUser = null)
         {
             Func<TargetRole, ScopeId, string, int, MethodBase, Task<string>> sender = SenderForTests;
             if (sender != null)
@@ -91,11 +96,11 @@ namespace AIInfluencePrism.Transport
             ScopeSettings scopeSettings = profile.Scope(scope);
             if (scopeSettings.Enabled)
             {
-                profile = scopeSettings.ToProfile(scope.ToString());
+                profile = scopeSettings.ToProfile(scope.ToString(), profile);
             }
 
             IChatTransport transport = Resolve(profile.Provider);
-            ChatTurn turn = ChatTurn.FromPrompt(prompt);
+            ChatTurn turn = ChatTurn.FromPrompt(prompt, splitSystem, splitUser);
             ModelOptions options = ModelOptions.FromProfile(profile);
             Stopwatch clock = Stopwatch.StartNew();
 
@@ -106,7 +111,7 @@ namespace AIInfluencePrism.Transport
 
             try
             {
-                int timeoutSeconds = profile.TimeoutSeconds < 10 ? 10 : profile.TimeoutSeconds;
+                int timeoutSeconds = profile.TimeoutSeconds <= 0 ? 180 : Math.Max(45, profile.TimeoutSeconds);
                 using (CancellationTokenSource timeout = new CancellationTokenSource(
                     TimeSpan.FromSeconds(timeoutSeconds)))
                 {
@@ -124,13 +129,15 @@ namespace AIInfluencePrism.Transport
                     {
                         if (scopeSettings.TimerInChat)
                         {
-                            ChatNotices.Error("empty reply from " + Profile.Label(profile.Provider), scope.ToString());
+                            ChatNotices.Error("Empty reply from " + Profile.Label(profile.Provider), scope.ToString());
                         }
 
                         LogSink.Warn("pipeline[" + scope + "]: empty reply from "
                             + Profile.Label(profile.Provider) + " in " + clock.ElapsedMilliseconds + " ms.");
                         return string.Empty;
                     }
+
+                    reply = HttpChatTransport.SanitizeReply(reply);
 
                     LogSink.Always("pipeline[" + scope + "]: " + Profile.Label(profile.Provider)
                         + " replied " + reply.Length + " chars in " + clock.ElapsedMilliseconds + " ms"
@@ -151,16 +158,23 @@ namespace AIInfluencePrism.Transport
             {
                 clock.Stop();
                 ElapsedTicker.Add(clock.Elapsed.TotalMilliseconds);
+                string msg = FormatErrorMessage(ex);
 
                 if (profile.ErrorNoticesEnabled)
                 {
-                    ChatNotices.Error("request failed (" + clock.ElapsedMilliseconds + " ms)", scope.ToString());
+                    ChatNotices.Error("Request failed: " + msg + " (" + clock.ElapsedMilliseconds + " ms)", scope.ToString());
                 }
 
                 LogSink.Error("pipeline[" + scope + "]: request failed ("
                     + Profile.Label(profile.Provider) + ", " + clock.ElapsedMilliseconds + " ms"
                     + ", url=" + transport.EndpointUrl(profile) + ").", ex);
-                return "[Prism] request failed: " + ex.Message;
+
+                if (scope != ScopeId.Dialogue)
+                {
+                    return string.Empty;
+                }
+
+                return "[Prism] request failed: " + msg;
             }
         }
 
@@ -218,7 +232,7 @@ namespace AIInfluencePrism.Transport
             try
             {
                 using (CancellationTokenSource timeout = new CancellationTokenSource(
-                    TimeSpan.FromSeconds(10)))
+                    TimeSpan.FromSeconds(45)))
                 {
                     Func<Profile, Task<bool>> probe = ProbeForTests;
                     bool ok = probe != null
@@ -242,24 +256,26 @@ namespace AIInfluencePrism.Transport
             catch (Exception ex)
             {
                 clock.Stop();
-                ChatNotices.Error("connection test error: " + ex.Message);
-                return "error: " + ex.Message;
+                string msg = FormatErrorMessage(ex);
+                ChatNotices.Error("Connection test error: " + msg);
+                return "error: " + msg;
             }
         }
 
         /// <summary>
         /// Connection test for one scope (the MCM "Test" button in a scope group).
-        /// Uses the scope's own settings; reports "[Prism - &lt;scope&gt;] Connection OK/failed".
+        /// Uses the scope's own settings; reports "[Prism - <scope>] Connection OK/failed".
         /// </summary>
         public static string ProbeScope(ScopeId scope)
         {
-            Profile active = ProfileBook.Current.Scope(scope).ToProfile(scope.ToString());
+            Profile current = ProfileBook.Current;
+            Profile active = current.Scope(scope).ToProfile(scope.ToString(), current);
             Stopwatch clock = Stopwatch.StartNew();
 
             try
             {
                 using (CancellationTokenSource timeout = new CancellationTokenSource(
-                    TimeSpan.FromSeconds(10)))
+                    TimeSpan.FromSeconds(45)))
                 {
                     Func<Profile, Task<bool>> probe = ProbeForTests;
                     bool ok = probe != null
@@ -284,8 +300,9 @@ namespace AIInfluencePrism.Transport
             catch (Exception ex)
             {
                 clock.Stop();
-                ChatNotices.Error("Connection test error: " + ex.Message, scope.ToString());
-                return "error: " + ex.Message;
+                string msg = FormatErrorMessage(ex);
+                ChatNotices.Error("Connection test error: " + msg, scope.ToString());
+                return "error: " + msg;
             }
         }
 
@@ -320,14 +337,15 @@ namespace AIInfluencePrism.Transport
             ChatNotices.Show("Test all: " + okCount + "/" + total + " connected.");
         }
 
-/// <summary>
+        /// <summary>
         /// Connection test to the model itself: sends one tiny real prompt
         /// through the scope's provider and reports the model's reply in the
         /// chat (green "Connection OK" + response preview + elapsed time).
         /// </summary>
         public static string ProbeModel(ScopeId scope)
         {
-            Profile profile = ProfileBook.Current.Scope(scope).ToProfile(scope.ToString());
+            Profile current = ProfileBook.Current;
+            Profile profile = current.Scope(scope).ToProfile(scope.ToString(), current);
             IChatTransport transport = Resolve(profile.Provider);
             Stopwatch clock = Stopwatch.StartNew();
 
@@ -335,8 +353,9 @@ namespace AIInfluencePrism.Transport
 
             try
             {
+                int timeoutSec = Math.Max(60, profile.TimeoutSeconds);
                 using (CancellationTokenSource timeout = new CancellationTokenSource(
-                    TimeSpan.FromSeconds(10)))
+                    TimeSpan.FromSeconds(timeoutSec)))
                 {
                     ChatTurn turn = ChatTurn.FromPrompt(title);
                     ModelOptions options = ModelOptions.FromProfile(profile);
@@ -374,16 +393,165 @@ namespace AIInfluencePrism.Transport
             catch (Exception ex)
             {
                 clock.Stop();
-                ChatNotices.Error("connection test error: " + ex.Message, scope.ToString());
-                return "error: " + ex.Message;
+                string msg = FormatErrorMessage(ex);
+                ChatNotices.Error("Connection test error: " + msg, scope.ToString());
+                return "error: " + msg;
             }
+        }
+
+        /// <summary>
+        /// General CLI test for Antigravity: checks if agy.exe is executable and reports its version.
+        /// </summary>
+        public static string ProbeAntigravityCli()
+        {
+            Profile current = ProfileBook.Current;
+            string cli = AntigravityTransport.ResolveCliPath(current.AntigravityCliPath);
+            Stopwatch clock = Stopwatch.StartNew();
+
+            try
+            {
+                using (CancellationTokenSource cts = new CancellationTokenSource(TimeSpan.FromSeconds(45)))
+                {
+                    ProcessResult res = AntigravityTransport.RunProcessAsync(cli, "--version", 45, cts.Token)
+                        .GetAwaiter().GetResult();
+                    clock.Stop();
+
+                    if (res.ExitCode == 0)
+                    {
+                        string ver = res.Output.Trim();
+                        ChatNotices.Show("CLI OK (" + clock.ElapsedMilliseconds + " ms): "
+                            + (string.IsNullOrEmpty(ver) ? "ready" : ver), "Antigravity", 0.35f, 0.85f, 0.35f);
+                        return "ok";
+                    }
+
+                    string err = !string.IsNullOrWhiteSpace(res.Error) ? res.Error : "Exit code " + res.ExitCode;
+                    ChatNotices.Error("CLI test failed: " + err, "Antigravity");
+                    return "failed";
+                }
+            }
+            catch (Exception ex)
+            {
+                clock.Stop();
+                string msg = FormatErrorMessage(ex);
+                ChatNotices.Error("CLI test error: " + msg, "Antigravity");
+                return "error: " + msg;
+            }
+        }
+
+        /// <summary>
+        /// Model test for Antigravity: sends a small ping prompt to the configured model via agy.exe.
+        /// </summary>
+        public static string ProbeAntigravityModel()
+        {
+            Profile current = ProfileBook.Current;
+            string cli = AntigravityTransport.ResolveCliPath(current.AntigravityCliPath);
+            string model = !string.IsNullOrWhiteSpace(current.AntigravityModel)
+                ? current.AntigravityModel.Trim()
+                : "gemini-3.8-flash-high";
+
+            Stopwatch clock = Stopwatch.StartNew();
+
+            try
+            {
+                using (CancellationTokenSource cts = new CancellationTokenSource(TimeSpan.FromSeconds(60)))
+                {
+                    System.Text.StringBuilder sb = new System.Text.StringBuilder();
+                    sb.Append("--input-format text");
+                    sb.Append(" --model ");
+                    sb.Append(AntigravityTransport.EscapeArgument(model));
+                    sb.Append(" --disable-slash-commands");
+
+                    ProcessResult res = AntigravityTransport.RunProcessAsync(
+                        cli, sb.ToString(), 60, cts.Token, "Prism test message. Reply with exactly: pong")
+                        .GetAwaiter().GetResult();
+                    clock.Stop();
+
+                    if (res.ExitCode == 0)
+                    {
+                        string reply = res.Output.Trim();
+                        if (string.IsNullOrEmpty(reply))
+                        {
+                            ChatNotices.Show("Connection OK (model responded in "
+                                + FormatSeconds(clock.ElapsedMilliseconds)
+                                + ", empty reply)", "Antigravity", 0.35f, 0.85f, 0.35f);
+                        }
+                        else
+                        {
+                            string preview = reply;
+                            if (preview.Length > 120)
+                            {
+                                preview = preview.Substring(0, 120) + "…";
+                            }
+                            ChatNotices.Show("Connection OK (model responded in "
+                                + FormatSeconds(clock.ElapsedMilliseconds) + "): \""
+                                + preview + "\"", "Antigravity", 0.35f, 0.85f, 0.35f);
+                        }
+                        return "ok";
+                    }
+
+                    string err = !string.IsNullOrWhiteSpace(res.Error) ? res.Error : "Exit code " + res.ExitCode;
+                    ChatNotices.Error("Model test failed: " + err, "Antigravity");
+                    return "failed";
+                }
+            }
+            catch (Exception ex)
+            {
+                clock.Stop();
+                string msg = FormatErrorMessage(ex);
+                ChatNotices.Error("Model test error: " + msg, "Antigravity");
+                return "error: " + msg;
+            }
+        }
+
+        internal static string FormatErrorMessage(Exception ex)
+        {
+            if (ex == null)
+            {
+                return string.Empty;
+            }
+
+            if (ex is AggregateException agg && agg.InnerExceptions != null && agg.InnerExceptions.Count > 0)
+            {
+                return FormatErrorMessage(agg.InnerExceptions[0]);
+            }
+
+            if (ex.InnerException is TransportException innerTe)
+            {
+                return FormatErrorMessage(innerTe);
+            }
+
+            if (ex.InnerException is OperationCanceledException innerCancel)
+            {
+                return FormatErrorMessage(innerCancel);
+            }
+
+            if (ex is OperationCanceledException ||
+                (ex.Message != null && ex.Message.IndexOf("task was canceled", StringComparison.OrdinalIgnoreCase) >= 0))
+            {
+                return "Request timed out (model took too long to respond)";
+            }
+
+            if (ex is TransportException te)
+            {
+                if (te.StatusCode == 429)
+                {
+                    return "Quota exceeded or subscription expired (HTTP 429)";
+                }
+                if (te.StatusCode == 503)
+                {
+                    return "Model temporarily unavailable due to high demand (HTTP 503)";
+                }
+                return te.Message;
+            }
+
+            return ex.Message;
         }
 
         private static string EndpointLabel(Profile profile)
         {
             try
             {
-                return Resolve(profile.Provider).EndpointUrl(profile);
+                return EndpointMapper.MaskUrl(Resolve(profile.Provider).EndpointUrl(profile));
             }
             catch
             {

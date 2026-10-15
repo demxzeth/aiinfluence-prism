@@ -129,9 +129,19 @@ namespace AIInfluencePrism.Config
                 {
                     document = JObject.Parse(text);
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Corrupt file — overwrite with a clean one.
+                    // Corrupt file — NEVER wipe player keys silently! Preserve a backup first before fallback.
+                    try
+                    {
+                        File.Copy(path, path + ".bak", overwrite: true);
+                        LogSink.Warn("profiles: " + PrismInfo.ProfilesFileName + " has syntax or parse errors: " + ex.Message + ". Preserved backup at " + path + ".bak before writing clean template.");
+                    }
+                    catch (Exception copyEx)
+                    {
+                        LogSink.Error("profiles: failed to backup corrupt " + path + " before overwrite: " + copyEx.Message);
+                    }
+
                     WriteTemplate(path);
                     return;
                 }
@@ -205,7 +215,7 @@ namespace AIInfluencePrism.Config
 
         private const string TemplateJson =
             "{\r\n" +
-            "  \"_comment\": \"Providers: openai | openai-sse | anthropic | gemini | ollama | koboldcpp | player2. Set rootUrl and apiKey of your provider; for player2 the model field may stay empty.\",\r\n" +
+            "  \"_comment\": \"Providers: openai | openai-sse | anthropic | gemini | ollama | koboldcpp | player2 | custom. Set rootUrl and apiKey of your provider; for player2 the model field may stay empty.\",\r\n" +
             "  \"active\": \"example\",\r\n" +
             "  \"profiles\": [\r\n" +
             "    {\r\n" +
@@ -215,7 +225,7 @@ namespace AIInfluencePrism.Config
             "      \"apiKey\": \"\",\r\n" +
             "      \"model\": \"gpt-4o-mini\",\r\n" +
             "      \"temperature\": 0.7,\r\n" +
-            "      \"maxTokens\": 1024,\r\n" +
+            "      \"maxTokens\": 0,\r\n" +
             "      \"timeoutSeconds\": 180\r\n" +
             "    },\r\n" +
             "    {\r\n" +
@@ -225,11 +235,25 @@ namespace AIInfluencePrism.Config
             "      \"apiKey\": \"\",\r\n" +
             "      \"model\": \"llama3.2\",\r\n" +
             "      \"temperature\": 0.7,\r\n" +
-            "      \"maxTokens\": 1024,\r\n" +
+            "      \"maxTokens\": 0,\r\n" +
             "      \"timeoutSeconds\": 180\r\n" +
             "    }\r\n" +
             "  ]\r\n" +
             "}";
+
+        // Serializes a profile to JSON format. Public for unit tests.
+        public static string FormatProfileJson(Profile profile)
+        {
+            if (profile == null) return string.Empty;
+            JObject entry = new JObject();
+            WriteEntry(entry, profile);
+            JObject doc = new JObject
+            {
+                ["active"] = profile.Name ?? "default",
+                ["profiles"] = new JArray { entry }
+            };
+            return doc.ToString(Newtonsoft.Json.Formatting.Indented);
+        }
 
         // Parse the JSON schema of profiles. Public for unit tests and E6.
         public static bool TryParseJson(string text, out Profile profile, out string error)
@@ -367,6 +391,30 @@ namespace AIInfluencePrism.Config
                 profile.TimeoutSeconds = timeout.Value;
             }
 
+            string re = (string)entry["reasoningEffort"] ?? (string)entry["reasoning"];
+            if (!string.IsNullOrEmpty(re))
+            {
+                profile.ReasoningEffort = re.Trim();
+            }
+
+            string cliPath = (string)entry["antigravityCliPath"];
+            if (!string.IsNullOrWhiteSpace(cliPath))
+            {
+                profile.AntigravityCliPath = cliPath.Trim();
+            }
+
+            string agyModel = (string)entry["antigravityModel"];
+            if (!string.IsNullOrWhiteSpace(agyModel))
+            {
+                profile.AntigravityModel = agyModel.Trim();
+            }
+
+            bool twoStage;
+            if (ReadBool(entry["antigravityTwoStageRequest"] ?? entry["twoStageRequest"], out twoStage))
+            {
+                profile.AntigravityTwoStageRequest = twoStage;
+            }
+
             // Per-scope settings.
             JObject scopes = entry["scopes"] as JObject;
             if (scopes != null)
@@ -390,6 +438,89 @@ namespace AIInfluencePrism.Config
                     profile.Scopes[id] = settings;
                 }
             }
+
+            // Per-provider stored settings
+            JObject providersObj = entry["providers"] as JObject;
+            if (providersObj != null)
+            {
+                foreach (JProperty prop in providersObj.Properties())
+                {
+                    JObject po = prop.Value as JObject;
+                    if (po != null)
+                    {
+                        profile.Providers[prop.Name] = ReadProviderSettings(po);
+                    }
+                }
+            }
+            profile.SaveCurrentToProvider(profile.Provider);
+
+            string imgProv = (string)entry["imageProvider"];
+            if (!string.IsNullOrWhiteSpace(imgProv))
+            {
+                profile.ImageProvider = imgProv.Trim();
+            }
+            string imgRoot = (string)entry["imageRootUrl"];
+            if (!string.IsNullOrWhiteSpace(imgRoot))
+            {
+                profile.ImageRootUrl = imgRoot.Trim();
+            }
+            string imgKey = (string)entry["imageApiKey"];
+            if (!string.IsNullOrWhiteSpace(imgKey))
+            {
+                profile.ImageApiKey = imgKey.Trim();
+            }
+            string imgModel = (string)entry["imageModel"];
+            if (!string.IsNullOrWhiteSpace(imgModel))
+            {
+                profile.ImageModel = imgModel.Trim();
+            }
+            string imgArt = (string)entry["imageArtStyle"];
+            if (!string.IsNullOrWhiteSpace(imgArt))
+            {
+                profile.ImageArtStyle = imgArt.Trim();
+            }
+            bool failSilently;
+            if (ReadBool(entry["imageFailSilently"], out failSilently))
+            {
+                profile.ImageFailSilently = failSilently;
+            }
+            bool autoFb;
+            if (ReadBool(entry["imageAutoFallbackFree"], out autoFb))
+            {
+                profile.ImageAutoFallbackFree = autoFb;
+            }
+
+            JObject imgProvidersObj = entry["imageProviders"] as JObject;
+            if (imgProvidersObj != null)
+            {
+                foreach (JProperty prop in imgProvidersObj.Properties())
+                {
+                    JObject ipo = prop.Value as JObject;
+                    if (ipo != null)
+                    {
+                        var ips = new ImageProviderSettings
+                        {
+                            RootUrl = ((string)ipo["rootUrl"] ?? string.Empty).Trim(),
+                            ApiKey = (string)ipo["apiKey"] ?? string.Empty,
+                            Model = ((string)ipo["model"] ?? string.Empty).Trim()
+                        };
+                        JArray am = ipo["availableModels"] as JArray;
+                        if (am != null)
+                        {
+                            foreach (JToken item in am)
+                            {
+                                string m = (string)item;
+                                if (!string.IsNullOrEmpty(m) && !ips.AvailableModels.Contains(m))
+                                {
+                                    ips.AvailableModels.Add(m);
+                                }
+                            }
+                        }
+                        profile.ImageProviders[prop.Name] = ips;
+                    }
+                }
+            }
+            profile.SaveCurrentImageProvider(profile.ImageProvider);
 
             return profile;
         }
@@ -421,10 +552,10 @@ namespace AIInfluencePrism.Config
                 case "dialogue": id = ScopeId.Dialogue; return true;
                 case "diplomacy": id = ScopeId.Diplomacy; return true;
                 case "events": case "dynamicevents": id = ScopeId.Events; return true;
-                case "memorybook": case "memory": id = ScopeId.MemoryBook; return true;
-                case "battletactics": case "battle": id = ScopeId.BattleTactics; return true;
-                case "groupconversation": case "group": id = ScopeId.GroupConversation; return true;
-                case "uniquecharacters": case "unique": id = ScopeId.UniqueCharacters; return true;
+                case "memorybook": case "memory book": case "memory": id = ScopeId.MemoryBook; return true;
+                case "battletactics": case "battle tactics": case "battle": id = ScopeId.BattleTactics; return true;
+                case "groupconversation": case "groupconversations": case "group conversation": case "group conversations": case "group": id = ScopeId.GroupConversation; return true;
+                case "uniquecharacters": case "unique characters": case "unique": id = ScopeId.UniqueCharacters; return true;
                 default: return false;
             }
         }
@@ -432,15 +563,25 @@ namespace AIInfluencePrism.Config
         private static ScopeSettings ReadScope(JObject so)
         {
             ScopeSettings s = new ScopeSettings();
-            bool enabled, timer;
+            bool enabled, timer, genImages;
             ReadBool(so["enabled"], out enabled);
             ReadBool(so["timerInChat"], out timer);
+            ReadBool(so["generateImages"], out genImages);
             s.Enabled = enabled;
             s.TimerInChat = timer;
+            s.GenerateImages = genImages;
+
+            string imgProv = (string)so["imageProvider"];
+            s.ImageProvider = !string.IsNullOrWhiteSpace(imgProv) ? imgProv.Trim() : "Default";
+
+            s.ImageModel = ((string)so["imageModel"] ?? string.Empty).Trim();
+            s.ImageEndpoint = ((string)so["imageEndpoint"] ?? string.Empty).Trim();
 
             ProviderKind kind;
-            Profile.TryParseProvider((string)so["provider"], out kind);
+            string rawProvider = (string)so["provider"];
+            Profile.TryParseProvider(rawProvider, out kind);
             s.Provider = kind;
+            s.ProviderRaw = rawProvider != null ? rawProvider.Trim() : null;
 
             s.RootUrl = ((string)so["rootUrl"] ?? string.Empty).Trim();
             s.ApiKey = (string)so["apiKey"] ?? string.Empty;
@@ -464,11 +605,48 @@ namespace AIInfluencePrism.Config
                 s.TimeoutSeconds = timeout.Value;
             }
 
+            JArray am = so["availableModels"] as JArray;
+            if (am != null)
+            {
+                foreach (JToken item in am)
+                {
+                    string m = (string)item;
+                    if (!string.IsNullOrEmpty(m) && !s.AvailableModels.Contains(m))
+                    {
+                        s.AvailableModels.Add(m);
+                    }
+                }
+            }
+
+            string sre = (string)so["reasoningEffort"] ?? (string)so["reasoning"];
+            if (!string.IsNullOrEmpty(sre))
+            {
+                s.ReasoningEffort = sre.Trim();
+            }
+
+            // Per-provider stored settings
+            JObject providersObj = so["providers"] as JObject;
+            if (providersObj != null)
+            {
+                foreach (JProperty prop in providersObj.Properties())
+                {
+                    JObject po = prop.Value as JObject;
+                    if (po != null)
+                    {
+                        s.Providers[prop.Name] = ReadProviderSettings(po);
+                    }
+                }
+            }
+            s.SaveCurrentToProvider(s.Provider);
+
             return s;
         }
 
         private static void WriteEntry(JObject entry, Profile profile)
         {
+            profile.SaveCurrentToProvider(profile.Provider);
+            profile.SaveCurrentImageProvider(profile.ImageProvider);
+
             entry["name"] = profile.Name ?? "profile";
             entry["masterEnabled"] = profile.MasterEnabled;
             entry["logEnabled"] = profile.LogEnabled;
@@ -481,6 +659,70 @@ namespace AIInfluencePrism.Config
             entry["temperature"] = profile.Temperature;
             entry["maxTokens"] = profile.MaxTokens;
             entry["timeoutSeconds"] = profile.TimeoutSeconds;
+            if (!string.IsNullOrEmpty(profile.ReasoningEffort) &&
+                !string.Equals(profile.ReasoningEffort, "default", StringComparison.OrdinalIgnoreCase))
+            {
+                entry["reasoningEffort"] = profile.ReasoningEffort;
+            }
+
+            entry["imageProvider"] = profile.ImageProvider ?? "OpenAI";
+            entry["imageRootUrl"] = profile.ImageRootUrl ?? string.Empty;
+            entry["imageApiKey"] = profile.ImageApiKey ?? string.Empty;
+            entry["imageModel"] = profile.ImageModel ?? string.Empty;
+            entry["imageArtStyle"] = profile.ImageArtStyle ?? "Bannerlord Concept Art";
+            entry["imageFailSilently"] = profile.ImageFailSilently;
+            entry["imageAutoFallbackFree"] = profile.ImageAutoFallbackFree;
+
+            if (profile.ImageProviders != null && profile.ImageProviders.Count > 0)
+            {
+                JObject ipObj = new JObject();
+                foreach (var kvp in profile.ImageProviders)
+                {
+                    if (kvp.Value != null)
+                    {
+                        JObject item = new JObject
+                        {
+                            { "rootUrl", kvp.Value.RootUrl ?? string.Empty },
+                            { "apiKey", kvp.Value.ApiKey ?? string.Empty },
+                            { "model", kvp.Value.Model ?? string.Empty }
+                        };
+                        if (kvp.Value.AvailableModels != null && kvp.Value.AvailableModels.Count > 0)
+                        {
+                            item["availableModels"] = JArray.FromObject(kvp.Value.AvailableModels);
+                        }
+                        ipObj[kvp.Key] = item;
+                    }
+                }
+                entry["imageProviders"] = ipObj;
+            }
+
+            if (profile.Providers != null && profile.Providers.Count > 0)
+            {
+                JObject pObj = new JObject();
+                foreach (var kvp in profile.Providers)
+                {
+                    if (kvp.Value != null)
+                    {
+                        pObj[kvp.Key] = SerializeProviderSettings(kvp.Value);
+                    }
+                }
+                entry["providers"] = pObj;
+            }
+
+            if (!string.IsNullOrEmpty(profile.AntigravityCliPath))
+            {
+                entry["antigravityCliPath"] = profile.AntigravityCliPath;
+            }
+
+            if (!string.IsNullOrEmpty(profile.AntigravityModel))
+            {
+                entry["antigravityModel"] = profile.AntigravityModel;
+            }
+
+            if (profile.AntigravityTwoStageRequest)
+            {
+                entry["antigravityTwoStageRequest"] = true;
+            }
 
             if (profile.Scopes != null && profile.Scopes.Count > 0)
             {
@@ -488,10 +730,15 @@ namespace AIInfluencePrism.Config
                 foreach (var pair in profile.Scopes)
                 {
                     ScopeSettings s = pair.Value;
+                    s.SaveCurrentToProvider(s.Provider);
                     JObject so = new JObject
                     {
                         { "enabled", s.Enabled },
                         { "timerInChat", s.TimerInChat },
+                        { "generateImages", s.GenerateImages },
+                        { "imageProvider", s.ImageProvider ?? "Default" },
+                        { "imageModel", s.ImageModel ?? string.Empty },
+                        { "imageEndpoint", s.ImageEndpoint ?? string.Empty },
                         { "provider", Profile.Label(s.Provider) },
                         { "rootUrl", s.RootUrl ?? string.Empty },
                         { "apiKey", s.ApiKey ?? string.Empty },
@@ -501,11 +748,98 @@ namespace AIInfluencePrism.Config
                         { "timeoutSeconds", s.TimeoutSeconds }
                     };
 
+                    if (!string.IsNullOrEmpty(s.ReasoningEffort) &&
+                        !string.Equals(s.ReasoningEffort, "default", StringComparison.OrdinalIgnoreCase))
+                    {
+                        so["reasoningEffort"] = s.ReasoningEffort;
+                    }
+
+                    if (s.AvailableModels != null && s.AvailableModels.Count > 0)
+                    {
+                        so["availableModels"] = JArray.FromObject(s.AvailableModels);
+                    }
+
+                    if (s.Providers != null && s.Providers.Count > 0)
+                    {
+                        JObject spObj = new JObject();
+                        foreach (var kvp in s.Providers)
+                        {
+                            if (kvp.Value != null)
+                            {
+                                spObj[kvp.Key] = SerializeProviderSettings(kvp.Value);
+                            }
+                        }
+                        so["providers"] = spObj;
+                    }
+
                     scopes[ScopeFileName(pair.Key)] = so;
                 }
 
                 entry["scopes"] = scopes;
             }
+        }
+
+        private static ProviderSettings ReadProviderSettings(JObject obj)
+        {
+            ProviderSettings ps = new ProviderSettings
+            {
+                RootUrl = ((string)obj["rootUrl"] ?? string.Empty).Trim(),
+                ApiKey = (string)obj["apiKey"] ?? string.Empty,
+                Model = ((string)obj["model"] ?? string.Empty).Trim()
+            };
+
+            double? temp = ReadNumber(obj["temperature"]);
+            if (temp.HasValue) ps.Temperature = Clamp(temp.Value, 0.0, 2.0);
+
+            int? mt = ReadInt(obj["maxTokens"]);
+            if (mt.HasValue && mt.Value >= 0) ps.MaxTokens = mt.Value;
+
+            int? to = ReadInt(obj["timeoutSeconds"]);
+            if (to.HasValue && to.Value >= 10) ps.TimeoutSeconds = to.Value;
+
+            string re = (string)obj["reasoningEffort"] ?? (string)obj["reasoning"];
+            if (!string.IsNullOrEmpty(re)) ps.ReasoningEffort = re.Trim();
+
+            JArray am = obj["availableModels"] as JArray;
+            if (am != null)
+            {
+                foreach (JToken item in am)
+                {
+                    string m = (string)item;
+                    if (!string.IsNullOrEmpty(m) && !ps.AvailableModels.Contains(m))
+                    {
+                        ps.AvailableModels.Add(m);
+                    }
+                }
+            }
+
+            return ps;
+        }
+
+        private static JObject SerializeProviderSettings(ProviderSettings ps)
+        {
+            JObject obj = new JObject
+            {
+                { "rootUrl", ps.RootUrl ?? string.Empty },
+                { "apiKey", ps.ApiKey ?? string.Empty },
+                { "model", ps.Model ?? string.Empty },
+                { "temperature", ps.Temperature },
+                { "maxTokens", ps.MaxTokens },
+                { "timeoutSeconds", ps.TimeoutSeconds }
+            };
+
+            if (!string.IsNullOrEmpty(ps.ReasoningEffort) &&
+                !string.Equals(ps.ReasoningEffort, "default", StringComparison.OrdinalIgnoreCase))
+            {
+                obj["reasoningEffort"] = ps.ReasoningEffort;
+            }
+
+            if (ps.AvailableModels != null && ps.AvailableModels.Count > 0)
+            {
+                obj["availableModels"] = JArray.FromObject(ps.AvailableModels);
+            }
+
+            return obj;
         }
 
         /// <summary>Scope id to the JSON file name (keys in the scopes object).</summary>

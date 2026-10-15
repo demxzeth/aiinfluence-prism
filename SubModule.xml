@@ -3,9 +3,9 @@
         xsi:noNamespaceSchemaLocation="https://raw.githubusercontent.com/BUTR/Bannerlord.XmlSchemas/master/SubModule.xsd">
   <Name value="AIInfluence Prism" />
   <Id value="AIInfluencePrism" />
-  <Version value="v0.1.0" />
+  <Version value="v0.5.0" />
   <Author value="demxzeth" />
-  <!-- См. README: подключает AIInfluence к любому провайдеру моделей. -->
+  <!-- See README: routes AIInfluence to any model provider. -->
   <Official value="false" />
   <DefaultModule value="false" />
   <SingleplayerModule value="true" />
@@ -13,7 +13,7 @@
   <ModuleCategory value="Singleplayer" />
   <Description>
     Route AIInfluence requests to any provider (OpenAI-compatible, Anthropic, Gemini,
-    Ollama, KoboldCpp, Player2) with per-scope settings, timers and JSON repair.
+    Nvidia, Ollama, KoboldCpp, Antigravity, Player2, Custom) with per-scope settings, timers and JSON repair.
   </Description>
 
   <DependedModules>

@@ -1,4 +1,4 @@
-// Файл-маркер: одна непустая строка = одно OR-условие; строки с // — комментарии.
+// Marker file: non-empty line = OR condition; lines starting with // are comments.
 ### Group conversation ###
 [Exchange
 WARNING: conversation interrupted. Someone else in the scene just said

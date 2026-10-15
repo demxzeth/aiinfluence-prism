@@ -29,11 +29,15 @@ No API key, no address, no model needed.
 2. **Copy** the `AIInfluencePrism` folder into
    `Mount & Blade II Bannerlord/Modules/`.
 3. **Enable** `AIInfluence Prism` in the launcher — load it **after** AIInfluence.
-4. **Start the game**, open `Options → AIInfluence Prism`, pick a provider, enter your key and model for
+4. **Start the game**, open `Options → AIInfluence Prism`, pick a provider for
    each scenario and press **Test connection to provider** (or **to model**).
 5. Done — Prism intercepts AI requests automatically and shows a live timer in chat.
 
+### Building from source
 
+```bat
+build.bat -GameFolder "C:\...\Mount & Blade II Bannerlord"
+```
 
 Requires .NET SDK 8+ and a Bannerlord installation for reference assemblies.
 
@@ -41,24 +45,20 @@ Requires .NET SDK 8+ and a Bannerlord installation for reference assemblies.
 
 ## Main features
 
-- **Any provider, one mod**: OpenAI-compatible, OpenAI+SSE (streaming),
-  Anthropic, Google Gemini, Ollama, KoboldCpp and **Player2** (local + cloud).
-- **Per-scenario profiles** — each AI scenario has its own provider, model,
-  API key, address, timeout, temperature and max tokens.
-- **Master switch** — disable Prism entirely (falls back to AIInfluence's
-  own backend) or per-scenario.
-- **Player2 auto-login & health check** — local (`127.0.0.1:4315`) works with
-  every field empty; cloud mode auto-logs in and adds `X-Player2-Trace-Id`.
-- **Live response timer** in chat: `Request sent` → `Timer: Ns` every 10 s →
-  green `Response received in Ns`.
-- **Two connection tests per scenario**: *provider* (endpoint reachable) and
-  *model* (one real prompt, model reply shown in chat). An empty reply still
-  counts as a valid connection.
-- **Free-form max tokens** — leave empty for no limit, or type any number
-  (no slider cap; long 16k–40k token responses are supported).
-- **JSON repair** for malformed/truncated model replies.
-- **In-game MCM screen** with a Support tab, Master tab, per-scope groups and
-  Diagnostics (logging, JSON repair, error notices, About).
+- **Any provider, one mod**: OpenAI-compatible, OpenAI+SSE (streaming), Anthropic, Google Gemini, Ollama, KoboldCpp, Player2 (local + cloud), and **Custom** (arbitrary endpoints/proxies).
+- **Per-scenario profiles** — each AI scenario has its own provider, model, API key, address, timeout, temperature, max tokens, and reasoning effort.
+- **Model Auto-Discovery ("Fetch")** — query your endpoint with one click to populate a live dropdown with all available models.
+- **Reasoning Effort Controls** — configurable thinking level (`Default`, `None`, `Low`, `Medium`, `High`) for OpenAI o1/o3, DeepSeek R1, and Anthropic Claude 3.7 Sonnet.
+- **Address Protection** — default endpoints are locked automatically; custom URLs are easily configured via `Provider: Custom`.
+- **Master switch** — disable Prism entirely (falls back to AIInfluence's own backend) or per-scenario.
+- **Color-coded in-game chat notices** — distinct signature colors per scenario (Dialogue, Diplomacy, Events, Battle Tactics, Memory, Group, Unique Characters).
+- **Clear quota & error reporting** — friendly notifications for HTTP 429 (*Quota exceeded or subscription expired*) and HTTP 503 (*Model temporarily unavailable due to high demand*).
+- **Player2 auto-login & health check** — local (`127.0.0.1:4315`) works with every field empty; cloud mode auto-logs in and adds `X-Player2-Trace-Id`.
+- **Live response timer in chat**: `Request sent` → `Timer: Ns` every 10 s → green `Response received in Ns`.
+- **Two connection tests per scenario**: *provider* (endpoint reachable) and *model* (one real prompt, model reply shown in chat). An empty reply still counts as a valid connection.
+- **Free-form max tokens** — leave empty for no limit (provider default), or type any number.
+- **JSON repair** for malformed/truncated model replies (`JsonHealer`).
+- **In-game MCM screen** with a Support tab, Master tab, per-scope groups and Diagnostics (logging, JSON repair, error notices, About).
 
 ---
 
@@ -74,14 +74,18 @@ Requires .NET SDK 8+ and a Bannerlord installation for reference assemblies.
 > No reference assemblies are bundled — they are fetched from your game install
 > the first time you build.
 
-AIInfluence Prism is an independent implementation, built from scratch. It shares no code with any previous or third-party AIInfluence add-ons.
+---
 
 ## Shout outs
 
 - Thanks to the **AIInfluence** author for the amazing mod this builds on, and
   for keeping NPC dialogue alive in Bannerlord.
+- Thanks to the **Player2** team for a great always-local AI companion with a
+  simple, open API.
 - Thanks to the **Bannerlord Mod Manager (MCM)** and **Bannerlord Harmony**
-  maintainers — without them, in-game settings and patching would be a nightmare..
+  maintainers — without them, in-game settings and patching would be a nightmare.
+- Thanks to everyone in the Bannerlord modding community for the help,
+  feedback and inspiration.
 
 ---
 

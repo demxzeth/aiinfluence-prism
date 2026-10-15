@@ -65,24 +65,25 @@ namespace AIInfluencePrism.Routing
                 new[] { "DynamicEvent", "EventCreator" }),
 
             new ScopeDescriptor(
-                ScopeId.MemoryBook, "MemoryBook", null,
-                new[] { "AIInfluence.MemorySystem" },
-                new string[0]),
+                ScopeId.MemoryBook, "Memory Book", null,
+                new[] { "AIInfluence.MemoryBook", "AIInfluence.MemorySystem", "AIInfluence.Memory" },
+                new[] { "MemoryBook", "MemoryEntry", "PromptMemory" }),
 
             new ScopeDescriptor(
-                ScopeId.BattleTactics, "BattleTactics",
+                ScopeId.BattleTactics, "Battle Tactics",
                 "battle-tactics.txt",
                 new string[0], new string[0]),
 
             new ScopeDescriptor(
-                ScopeId.GroupConversation, "GroupConversation",
+                ScopeId.GroupConversation, "Group Conversations",
                 "group-conversations.txt",
                 new string[0], new string[0]),
 
             new ScopeDescriptor(
-                ScopeId.UniqueCharacters, "UniqueCharacters",
+                ScopeId.UniqueCharacters, "Unique Characters",
                 "unique-characters.txt",
-                new string[0], new string[0]),
+                new[] { "AIInfluence.Behaviors.UniqueRoleCharacters", "AIInfluence.PromptUniqueRoleCharacterStorage" },
+                new[] { "UniqueRole", "UniqueCharacter" }),
         };
 
         /// <summary>Marker-scope check order: specific before general.</summary>
@@ -96,6 +97,44 @@ namespace AIInfluencePrism.Routing
         public static ScopeDescriptor Get(ScopeId id)
         {
             return All.FirstOrDefault(d => d.Id == id);
+        }
+
+        /// <summary>Formats a ScopeId into a human-readable title with spaces.</summary>
+        public static string FormatScopeName(ScopeId scope)
+        {
+            switch (scope)
+            {
+                case ScopeId.Dialogue: return "Dialogue";
+                case ScopeId.Diplomacy: return "Diplomacy";
+                case ScopeId.Events: return "Events";
+                case ScopeId.MemoryBook: return "Memory Book";
+                case ScopeId.BattleTactics: return "Battle Tactics";
+                case ScopeId.GroupConversation: return "Group Conversations";
+                case ScopeId.UniqueCharacters: return "Unique Characters";
+                default: return scope.ToString();
+            }
+        }
+
+        /// <summary>Normalizes unspaced scope identifiers (e.g. MemoryBook -> Memory Book).</summary>
+        public static string NormalizeTitle(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return string.Empty;
+            string trimmed = name.Trim();
+            if (string.Equals(trimmed, "MemoryBook", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(trimmed, "Memory Book", StringComparison.OrdinalIgnoreCase))
+                return "Memory Book";
+            if (string.Equals(trimmed, "BattleTactics", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(trimmed, "Battle Tactics", StringComparison.OrdinalIgnoreCase))
+                return "Battle Tactics";
+            if (string.Equals(trimmed, "GroupConversation", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(trimmed, "GroupConversations", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(trimmed, "Group Conversation", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(trimmed, "Group Conversations", StringComparison.OrdinalIgnoreCase))
+                return "Group Conversations";
+            if (string.Equals(trimmed, "UniqueCharacters", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(trimmed, "Unique Characters", StringComparison.OrdinalIgnoreCase))
+                return "Unique Characters";
+            return trimmed;
         }
 
         /// <summary>Descriptors that have a marker file, in MatchOrder.</summary>

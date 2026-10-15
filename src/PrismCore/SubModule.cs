@@ -15,12 +15,33 @@ namespace AIInfluencePrism.PrismCore
     /// </summary>
     public sealed class SubModule : MBSubModuleBase
     {
+        public static int MainThreadId { get; private set; }
         private const float TickerFlushIntervalSeconds = 60f;
         private float _tickerNextFlushIn = TickerFlushIntervalSeconds;
+        private bool _mcmRegistered;
+
+        private void TryRegisterMcm()
+        {
+            if (_mcmRegistered) return;
+            try
+            {
+                McmProviderSettings providers = McmProviderSettings.Instance;
+                providers?.PullFromProfile();
+                McmScopeSettings scopes = McmScopeSettings.Instance;
+                scopes?.PullFromProfile();
+                _mcmRegistered = true;
+                LogSink.Always("mcm: settings registered (Providers and Scopes).");
+            }
+            catch (Exception ex)
+            {
+                LogSink.Warn("mcm: registration failed (MCM not loaded yet?): " + ex.Message);
+            }
+        }
 
         protected override void OnSubModuleLoad()
         {
             base.OnSubModuleLoad();
+            MainThreadId = System.Threading.Thread.CurrentThread.ManagedThreadId;
 
             string root = ModuleLocator.Root;
             if (root.Length == 0)
@@ -42,21 +63,13 @@ namespace AIInfluencePrism.PrismCore
                 + " scopes, " + markers + " markers.");
 
             AIInfluencePrism.Config.ProfileBook.Warmup();
+            LogSink.Enabled = AIInfluencePrism.Config.ProfileBook.Current.LogEnabled;
 
             // Warm up JsonVault (pre-reads the vault file; thread-safe).
             JsonVault.GetString("_warmup", "");
 
-            // Register the MCM settings screen and sync from the current profile.
-            try
-            {
-                McmBridge settings = McmBridge.Instance;
-                settings.PullFromProfile();
-                LogSink.Always("mcm: settings registered.");
-            }
-            catch (Exception ex)
-            {
-                LogSink.Warn("mcm: registration failed (MCM not loaded?): " + ex.Message);
-            }
+            // Register the MCM settings screens and sync from the current profile.
+            TryRegisterMcm();
 
             Engine.Create();
         }
@@ -64,12 +77,18 @@ namespace AIInfluencePrism.PrismCore
         protected override void OnBeforeInitialModuleScreenSetAsRoot()
         {
             base.OnBeforeInitialModuleScreenSetAsRoot();
+            if (!_mcmRegistered)
+            {
+                TryRegisterMcm();
+            }
             Engine.PrimeStep(1f); // one decent attempt on the main screen
         }
 
         protected override void OnApplicationTick(float dt)
         {
             base.OnApplicationTick(dt);
+            ChatNotices.FlushPending();
+            McmUiHelpers.ProcessMainThreadActions();
             Engine.PrimeStep(dt);
 
             if (_tickerNextFlushIn > 0f)
@@ -88,6 +107,7 @@ namespace AIInfluencePrism.PrismCore
 
         protected override void OnSubModuleUnloaded()
         {
+            ChatNotices.FlushPending();
             ElapsedTicker.FlushToLog();   // final session summary in the log
             Engine.TearDown();
             LogSink.Always("unloaded; patches removed.");

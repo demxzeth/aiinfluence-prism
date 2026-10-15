@@ -4,6 +4,7 @@
     <TargetFramework>net472</TargetFramework>
     <AssemblyName>AIInfluencePrism</AssemblyName>
     <RootNamespace>AIInfluencePrism</RootNamespace>
+    <Version>0.5.0</Version>
     <LangVersion>latest</LangVersion>
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
@@ -22,7 +23,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Позволяет собирать net472 без установленного Visual Studio / Developer Pack. -->
+    <!-- Allows building net472 without Visual Studio / Developer Pack installed. -->
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="All" />
   </ItemGroup>
 
@@ -35,10 +36,10 @@
       <HintPath>..\libs\MCMv5.dll</HintPath>
       <Private>false</Private>
     </Reference>
-    <!-- Newtonsoft: игра предоставляет 13.0.0.0 в bin/Win64_Shipping_Client;
-         компилируемся против той же версии, чтобы связка совпала на рантайме.
-         ExcludeAssets=runtime — не копируем DLL в пакет мода. -->
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.0.3" ExcludeAssets="runtime" />
+    <!-- Newtonsoft: the game provides 13.0.0.0 in bin/Win64_Shipping_Client;
+         compile against the same version so the binding matches at runtime.
+         ExcludeAssets=runtime — do not copy DLL into mod package. -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.1" ExcludeAssets="runtime" />
     <Reference Include="System.Net.Http" />
     <Reference Include="TaleWorlds.Core">
       <HintPath>..\libs\TaleWorlds\TaleWorlds.Core.dll</HintPath>
@@ -66,6 +67,30 @@
     </Reference>
     <Reference Include="TaleWorlds.MountAndBlade">
       <HintPath>..\libs\TaleWorlds\TaleWorlds.MountAndBlade.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="TaleWorlds.DotNet">
+      <HintPath>..\libs\TaleWorlds\TaleWorlds.DotNet.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="TaleWorlds.Engine">
+      <HintPath>..\libs\TaleWorlds\TaleWorlds.Engine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="TaleWorlds.TwoDimension">
+      <HintPath>..\libs\TaleWorlds\TaleWorlds.TwoDimension.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="TaleWorlds.GauntletUI">
+      <HintPath>..\libs\TaleWorlds\TaleWorlds.GauntletUI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="TaleWorlds.Engine.GauntletUI">
+      <HintPath>..\libs\TaleWorlds\TaleWorlds.Engine.GauntletUI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="TaleWorlds.ObjectSystem">
+      <HintPath>..\libs\TaleWorlds\TaleWorlds.ObjectSystem.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>

@@ -47,7 +47,7 @@ namespace AIInfluencePrism.Hook
                     return true;
                 }
 
-                if (!TryExtract(__args, out string prompt, out int cachePrefix))
+                if (!TryExtract(__args, out string prompt, out int cachePrefix, out string systemPart, out string userPart))
                 {
                     LogSink.Warn("dispatch[" + role + "]: no prompt in args ("
                         + (__args == null ? "null" : __args.Length.ToString()) + " params); passing through.");
@@ -76,7 +76,14 @@ namespace AIInfluencePrism.Hook
                     return true;
                 }
 
-                __result = Pipeline.SendAsync(role, scope, prompt, cachePrefix, __originalMethod);
+                // If this is a dialogue LLM request and dialogue image generation is enabled,
+                // initiate simultaneous image generation concurrently with the text generation!
+                if (scope == ScopeId.Dialogue && ProfileBook.Current.Scope(ScopeId.Dialogue).GenerateImages)
+                {
+                    DialogueSceneCoordinator.StartConcurrentDialogueImage(prompt, userPart);
+                }
+
+                __result = Pipeline.SendAsync(role, scope, prompt, cachePrefix, __originalMethod, systemPart, userPart);
                 return false;
             }
             catch (Exception ex)
@@ -90,8 +97,17 @@ namespace AIInfluencePrism.Hook
         /// <summary>Extracts the prompt and cachePrefix from the argument array.</summary>
         public static bool TryExtract(object[] args, out string prompt, out int cachePrefix)
         {
+            return TryExtract(args, out prompt, out cachePrefix, out _, out _);
+        }
+
+        /// <summary>Extracts the prompt, cachePrefix, and two-stage split parts from the argument array.</summary>
+        public static bool TryExtract(
+            object[] args, out string prompt, out int cachePrefix, out string systemContent, out string userContent)
+        {
             prompt = null;
             cachePrefix = 0;
+            systemContent = null;
+            userContent = null;
 
             if (args == null || args.Length == 0)
             {
@@ -103,12 +119,14 @@ namespace AIInfluencePrism.Hook
             // (npc, faction, backend name, tags) are short. Scanning by position
             // is unreliable: parameter shapes changed between API versions.
             string best = null;
+            object bestArg = null;
             foreach (object arg in args)
             {
                 string candidate = AsPrompt(arg);
                 if (candidate != null && (best == null || candidate.Length > best.Length))
                 {
                     best = candidate;
+                    bestArg = arg;
                 }
             }
 
@@ -128,7 +146,90 @@ namespace AIInfluencePrism.Hook
                 }
             }
 
+            if (bestArg != null && !(bestArg is string))
+            {
+                ExtractPayloadSplit(bestArg, ref cachePrefix, out systemContent, out userContent);
+            }
+
+            if (string.IsNullOrEmpty(systemContent) || string.IsNullOrEmpty(userContent))
+            {
+                TryDeriveTextSplit(prompt, cachePrefix, out systemContent, out userContent);
+            }
+
             return true;
+        }
+
+        private static void ExtractPayloadSplit(
+            object payload, ref int cachePrefix, out string systemContent, out string userContent)
+        {
+            systemContent = null;
+            userContent = null;
+            if (payload == null) return;
+
+            Type type = payload.GetType();
+            PropertyInfo sysProp = type.GetProperty("SystemContent", BindingFlags.Public | BindingFlags.Instance);
+            PropertyInfo usrProp = type.GetProperty("UserContent", BindingFlags.Public | BindingFlags.Instance);
+            PropertyInfo pfxProp = type.GetProperty("StaticPrefixLength", BindingFlags.Public | BindingFlags.Instance);
+
+            if (sysProp != null && usrProp != null)
+            {
+                string s = sysProp.GetValue(payload, null) as string;
+                string u = usrProp.GetValue(payload, null) as string;
+                if (!string.IsNullOrEmpty(s) && !string.IsNullOrEmpty(u))
+                {
+                    systemContent = s;
+                    userContent = u;
+                }
+            }
+
+            if (pfxProp != null)
+            {
+                object val = pfxProp.GetValue(payload, null);
+                if (val is int pfx && pfx > 0)
+                {
+                    cachePrefix = pfx;
+                }
+            }
+        }
+
+        public static bool TryDeriveTextSplit(
+            string prompt, int cachePrefix, out string systemContent, out string userContent)
+        {
+            systemContent = null;
+            userContent = null;
+            if (string.IsNullOrEmpty(prompt)) return false;
+
+            if (cachePrefix > 0 && cachePrefix < prompt.Length)
+            {
+                systemContent = prompt.Substring(0, cachePrefix).TrimEnd();
+                userContent = prompt.Substring(cachePrefix).TrimStart();
+                return true;
+            }
+
+            string[] markers = new string[]
+            {
+                "### ТЕКУЩАЯ ИСТОРИЯ ДИАЛОГА",
+                "### Conversation history ###",
+                "### Conversation History ###",
+                "### Group conversation ###",
+                "### Dialogue history ###"
+            };
+
+            foreach (string marker in markers)
+            {
+                int idx = prompt.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+                if (idx > 0)
+                {
+                    int sep = prompt.LastIndexOf("============================================================", idx, StringComparison.Ordinal);
+                    int split = (sep > 0 && (idx - sep) < 200) ? sep : idx;
+
+                    systemContent = prompt.Substring(0, split).TrimEnd();
+                    userContent = prompt.Substring(split).TrimStart();
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         /// <summary>

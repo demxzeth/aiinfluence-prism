@@ -1,4 +1,4 @@
-// Файл-маркер: одна непустая строка = одно OR-условие; строки с // — комментарии.
+// Marker file: non-empty line = OR condition; lines starting with // are comments.
 === CHARACTER CREATION ===
 You are creating a brand-new NPC who will appear in the world
 They must match role_title, culture, age, traits, and skills from the same JSON response

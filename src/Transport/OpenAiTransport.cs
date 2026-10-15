@@ -2,8 +2,11 @@ using System;
 using System.IO;
 using System.Net.Http;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 using AIInfluencePrism.Config;
+using AIInfluencePrism.Infra;
 using AIInfluencePrism.Post;
 
 namespace AIInfluencePrism.Transport
@@ -11,7 +14,7 @@ namespace AIInfluencePrism.Transport
     /// <summary>
     /// OpenAI-compatible protocol: POST {root}/v1/chat/completions.
     /// Serves both modes: plain (stream=false) and SSE (stream=true,
-    /// the reply is accumulated from deltas). Player2 is a thin
+    /// the reply is accumulated incrementally from deltas). Player2 is a thin
     /// tuning on top of it.
     /// </summary>
     public class OpenAiTransport : HttpChatTransport
@@ -70,6 +73,12 @@ namespace AIInfluencePrism.Transport
                 body["model"] = options.Model;
             }
 
+            if (!string.IsNullOrEmpty(options.ReasoningEffort) &&
+                !string.Equals(options.ReasoningEffort, "default", StringComparison.OrdinalIgnoreCase))
+            {
+                body["reasoning_effort"] = options.ReasoningEffort.ToLowerInvariant();
+            }
+
             return body.ToString(Newtonsoft.Json.Formatting.None);
         }
 
@@ -80,6 +89,67 @@ namespace AIInfluencePrism.Transport
             {
                 request.Headers.Authorization =
                     new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", key);
+            }
+        }
+
+        public override async Task<string> SendAsync(
+            ChatTurn turn, ModelOptions options, Profile profile, CancellationToken cancellationToken)
+        {
+            if (!_stream)
+            {
+                return await base.SendAsync(turn, options, profile, cancellationToken).ConfigureAwait(false);
+            }
+
+            if (profile == null)
+            {
+                throw new ArgumentNullException(nameof(profile));
+            }
+
+            string url = EndpointUrl(profile);
+            string body = BuildRequestBody(turn, options, profile);
+            LogSink.Info("http: POST (stream) " + EndpointMapper.MaskUrl(url) + " (" + body.Length + " bytes).");
+
+            using (HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, url))
+            using (StringContent content = new StringContent(body, Encoding.UTF8, "application/json"))
+            {
+                request.Content = content;
+                ConfigureRequest(request, profile);
+
+                using (HttpResponseMessage response = await SharedClient
+                    .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+                    .ConfigureAwait(false))
+                {
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        string raw = response.Content == null
+                            ? string.Empty
+                            : await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                        int code = (int)response.StatusCode;
+                        string snippet = Snippet(raw);
+                        if (code == 429)
+                        {
+                            throw new TransportException(429, string.IsNullOrEmpty(snippet) ? "Quota exceeded or subscription expired (HTTP 429)" : snippet);
+                        }
+                        if (code == 503)
+                        {
+                            throw new TransportException(503, string.IsNullOrEmpty(snippet) ? "Model temporarily unavailable due to high demand (HTTP 503)" : snippet);
+                        }
+                        throw new TransportException(code, snippet);
+                    }
+
+                    if (response.Content == null)
+                    {
+                        return string.Empty;
+                    }
+
+                    using (Stream stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false))
+                    using (StreamReader reader = new StreamReader(stream, Encoding.UTF8))
+                    {
+                        string text = await ReplyReader.ReadSseAsync(
+                            reader, "choices[0].delta.content", "choices[0].text").ConfigureAwait(false);
+                        return SanitizeReply(text ?? string.Empty);
+                    }
+                }
             }
         }
 
@@ -110,6 +180,11 @@ namespace AIInfluencePrism.Transport
         {
             return ReplyReader.ReadSse(
                 sseBody, "choices[0].delta.content", "choices[0].text");
+        }
+
+        protected override string ProbeUrl(Profile profile)
+        {
+            return EndpointMapper.V1BaseUrl(profile.EffectiveRoot()) + "/models";
         }
     }
 }

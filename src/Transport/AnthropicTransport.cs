@@ -1,3 +1,4 @@
+using System;
 using System.Net.Http;
 using System.Text;
 using Newtonsoft.Json.Linq;
@@ -52,6 +53,34 @@ namespace AIInfluencePrism.Transport
                 body["system"] = turn.System;
             }
 
+            if (!string.IsNullOrEmpty(options.ReasoningEffort) &&
+                !string.Equals(options.ReasoningEffort, "default", StringComparison.OrdinalIgnoreCase))
+            {
+                if (string.Equals(options.ReasoningEffort, "none", StringComparison.OrdinalIgnoreCase))
+                {
+                    body["thinking"] = new JObject { { "type", "disabled" } };
+                }
+                else
+                {
+                    int budget = 2048;
+                    if (string.Equals(options.ReasoningEffort, "low", StringComparison.OrdinalIgnoreCase)) budget = 1024;
+                    else if (string.Equals(options.ReasoningEffort, "high", StringComparison.OrdinalIgnoreCase)) budget = 4096;
+
+                    // When thinking is enabled, max_tokens must be > budget_tokens
+                    if (tokenLimit <= budget)
+                    {
+                        body["max_tokens"] = budget + 1024;
+                    }
+                    body["thinking"] = new JObject
+                    {
+                        { "type", "enabled" },
+                        { "budget_tokens", budget }
+                    };
+                    // Anthropic API requires temperature == 1.0 when thinking is enabled (HTTP 400 otherwise).
+                    body["temperature"] = 1.0;
+                }
+            }
+
             return body.ToString(Newtonsoft.Json.Formatting.None);
         }
 
@@ -71,6 +100,11 @@ namespace AIInfluencePrism.Transport
             // Content is a list of typed blocks; only "text" blocks
             // carry the answer (tool_use and others are skipped).
             return ReplyReader.ReadBlocks(rawBody, "content", "text", "type", "text");
+        }
+
+        protected override string ProbeUrl(Profile profile)
+        {
+            return EndpointMapper.V1BaseUrl(profile.EffectiveRoot()) + "/models";
         }
     }
 }

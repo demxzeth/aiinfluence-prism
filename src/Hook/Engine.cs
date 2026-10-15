@@ -40,6 +40,12 @@ namespace AIInfluencePrism.Hook
             get { return _attempts; }
         }
 
+        /// <summary>The active Harmony instance.</summary>
+        public static Harmony HarmonyInstance
+        {
+            get { return _harmony; }
+        }
+
         /// <summary>Create the Harmony instance. Called in OnSubModuleLoad.</summary>
         public static void Create()
         {
@@ -47,6 +53,7 @@ namespace AIInfluencePrism.Hook
             {
                 _harmony = new Harmony(PrismInfo.HarmonyId);
             }
+            ImageDispatch.Install(_harmony);
         }
 
         /// <summary>
@@ -76,11 +83,12 @@ namespace AIInfluencePrism.Hook
 
             try
             {
+                ImageDispatch.Install(_harmony);
                 Installer.Install(_harmony);
-                if (Installer.PatchedCount > 0)
+                if (Installer.PatchedCount > 0 && (ImageDispatch.Installed || _attempts >= 10))
                 {
                     _installed = true;
-                    LogSink.Always("hooks installed: " + Installer.PatchedCount + " target method(s).");
+                    LogSink.Always("hooks installed: " + Installer.PatchedCount + " target method(s), image dispatch: " + (ImageDispatch.Installed ? "ready" : "partial/deferred") + ".");
                 }
                 else
                 {
@@ -104,6 +112,7 @@ namespace AIInfluencePrism.Hook
             }
 
             Installer.Reset();
+            ImageDispatch.Reset();
             _installed = false;
             _attempts = 0;
             _nextAttemptIn = 0f;

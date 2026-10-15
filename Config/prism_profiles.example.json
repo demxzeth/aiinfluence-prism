@@ -1,0 +1,36 @@
+{
+  "_comment": "Providers: openai | openai-sse | anthropic | gemini | ollama | koboldcpp | player2 | custom | antigravity | nvidia. Set rootUrl and apiKey of your provider; for player2 the model field may stay empty. maxTokens 0 = no limit.",
+  "active": "player2-local",
+  "profiles": [
+    {
+      "name": "player2-local",
+      "provider": "player2",
+      "rootUrl": "",
+      "apiKey": "",
+      "model": "",
+      "temperature": 0.7,
+      "maxTokens": 0,
+      "timeoutSeconds": 180
+    },
+    {
+      "name": "openai-cloud",
+      "provider": "openai",
+      "rootUrl": "https://api.openai.com",
+      "apiKey": "sk-...",
+      "model": "gpt-4o-mini",
+      "temperature": 0.7,
+      "maxTokens": 0,
+      "timeoutSeconds": 180
+    },
+    {
+      "name": "nvidia-nim",
+      "provider": "nvidia",
+      "rootUrl": "https://integrate.api.nvidia.com/v1",
+      "apiKey": "nvapi-...",
+      "model": "meta/llama-3.3-70b-instruct",
+      "temperature": 0.7,
+      "maxTokens": 0,
+      "timeoutSeconds": 180
+    }
+  ]
+}

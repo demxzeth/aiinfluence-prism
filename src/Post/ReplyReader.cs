@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Text;
+using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 
 namespace AIInfluencePrism.Post
@@ -16,13 +17,40 @@ namespace AIInfluencePrism.Post
     public static class ReplyReader
     {
         /// <summary>
+        /// Parses JSON optionally applying JsonHealer if JsonRepairEnabled is true.
+        /// </summary>
+        public static bool ParseJson(string rawBody, out JObject json)
+        {
+            json = null;
+            if (string.IsNullOrWhiteSpace(rawBody))
+            {
+                return false;
+            }
+
+            if (AIInfluencePrism.Config.ProfileBook.Current.JsonRepairEnabled)
+            {
+                return JsonHealer.TryParse(rawBody, out json);
+            }
+
+            try
+            {
+                json = JObject.Parse(rawBody);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
         /// Read a scalar string from the first token path that
         /// yields a non-empty value ("choices[0].message.content").
         /// </summary>
         public static string ReadJson(string rawBody, params string[] tokenPaths)
         {
             JObject json;
-            if (!JsonHealer.TryParse(rawBody, out json))
+            if (!ParseJson(rawBody, out json))
             {
                 return null;
             }
@@ -49,7 +77,7 @@ namespace AIInfluencePrism.Post
             string typeField = null, string wantedType = "text")
         {
             JObject json;
-            if (!JsonHealer.TryParse(rawBody, out json))
+            if (!ParseJson(rawBody, out json))
             {
                 return null;
             }
@@ -85,9 +113,112 @@ namespace AIInfluencePrism.Post
         }
 
         /// <summary>
-        /// Assemble an SSE body: join the values at the given paths of
+        /// Assemble an SSE stream: join the values at the given paths of
         /// every "data:" frame until the [DONE] sentinel. Broken frames
         /// are skipped and comment lines ignored.
+        /// </summary>
+        public static string ReadSse(TextReader reader, params string[] framePaths)
+        {
+            if (reader == null)
+            {
+                return null;
+            }
+
+            StringBuilder assembled = new StringBuilder();
+            string line;
+            while ((line = reader.ReadLine()) != null)
+            {
+                string trimmed = line.Trim();
+                if (!trimmed.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                string payload = trimmed.Substring(5).Trim();
+                if (payload.Length == 0)
+                {
+                    continue;
+                }
+
+                if (string.Equals(payload, "[DONE]", StringComparison.OrdinalIgnoreCase))
+                {
+                    break;
+                }
+
+                JObject frame;
+                if (!ParseJson(payload, out frame))
+                {
+                    continue;
+                }
+
+                foreach (string path in framePaths)
+                {
+                    string delta = (string)frame.SelectToken(path);
+                    if (delta != null)
+                    {
+                        assembled.Append(delta);
+                        break;
+                    }
+                }
+            }
+
+            return assembled.Length > 0 ? assembled.ToString() : null;
+        }
+
+        /// <summary>
+        /// Asynchronously assemble an SSE stream from a TextReader.
+        /// </summary>
+        public static async Task<string> ReadSseAsync(TextReader reader, params string[] framePaths)
+        {
+            if (reader == null)
+            {
+                return null;
+            }
+
+            StringBuilder assembled = new StringBuilder();
+            string line;
+            while ((line = await reader.ReadLineAsync().ConfigureAwait(false)) != null)
+            {
+                string trimmed = line.Trim();
+                if (!trimmed.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                string payload = trimmed.Substring(5).Trim();
+                if (payload.Length == 0)
+                {
+                    continue;
+                }
+
+                if (string.Equals(payload, "[DONE]", StringComparison.OrdinalIgnoreCase))
+                {
+                    break;
+                }
+
+                JObject frame;
+                if (!ParseJson(payload, out frame))
+                {
+                    continue;
+                }
+
+                foreach (string path in framePaths)
+                {
+                    string delta = (string)frame.SelectToken(path);
+                    if (delta != null)
+                    {
+                        assembled.Append(delta);
+                        break;
+                    }
+                }
+            }
+
+            return assembled.Length > 0 ? assembled.ToString() : null;
+        }
+
+        /// <summary>
+        /// Assemble an SSE body string: join the values at the given paths of
+        /// every "data:" frame until the [DONE] sentinel.
         /// </summary>
         public static string ReadSse(string rawBody, params string[] framePaths)
         {
@@ -96,55 +227,17 @@ namespace AIInfluencePrism.Post
                 return null;
             }
 
-            StringBuilder assembled = new StringBuilder();
             using (StringReader reader = new StringReader(rawBody))
             {
-                string line;
-                while ((line = reader.ReadLine()) != null)
-                {
-                    string trimmed = line.Trim();
-                    if (!trimmed.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
-                    {
-                        continue;
-                    }
-
-                    string payload = trimmed.Substring(5).Trim();
-                    if (payload.Length == 0)
-                    {
-                        continue;
-                    }
-
-                    if (string.Equals(payload, "[DONE]", StringComparison.OrdinalIgnoreCase))
-                    {
-                        break;
-                    }
-
-                    JObject frame;
-                    if (!JsonHealer.TryParse(payload, out frame))
-                    {
-                        continue;
-                    }
-
-                    foreach (string path in framePaths)
-                    {
-                        string delta = (string)frame.SelectToken(path);
-                        if (delta != null)
-                        {
-                            assembled.Append(delta);
-                            break;
-                        }
-                    }
-                }
+                return ReadSse(reader, framePaths);
             }
-
-            return assembled.Length > 0 ? assembled.ToString() : null;
         }
 
         /// <summary>Read a single named top-level string field.</summary>
         public static string ReadField(string rawBody, string fieldName)
         {
             JObject json;
-            if (!JsonHealer.TryParse(rawBody, out json))
+            if (!ParseJson(rawBody, out json))
             {
                 return null;
             }

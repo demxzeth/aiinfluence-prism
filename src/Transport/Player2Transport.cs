@@ -25,6 +25,7 @@ namespace AIInfluencePrism.Transport
 
         private static string _sessionKey;
         private static readonly object LoginGate = new object();
+        private static readonly SemaphoreSlim LoginAsyncLock = new SemaphoreSlim(1, 1);
 
         public Player2Transport()
             : base(ProviderKind.Player2, stream: false)
@@ -42,10 +43,10 @@ namespace AIInfluencePrism.Transport
         public override async Task<string> SendAsync(
             ChatTurn turn, ModelOptions options, Profile profile, CancellationToken cancellationToken)
         {
-            // Local mode without a key: try auto-login once.
+            // Local mode without a key: try auto-login once asynchronously without blocking.
             if (EffectiveKey(profile).Length == 0)
             {
-                TryLoginOnce(profile);
+                await TryLoginOnceAsync(profile, cancellationToken).ConfigureAwait(false);
             }
 
             return await base.SendAsync(turn, options, profile, cancellationToken).ConfigureAwait(false);
@@ -87,12 +88,18 @@ namespace AIInfluencePrism.Transport
         }
 
         /// <summary>
-        /// Auto-login for local mode. Once per session; on failure we keep
-        /// working without Authorization (the local app is usually open).
+        /// Auto-login for local mode. Asynchronous and non-blocking with a 45-second timeout.
+        /// Once per session; on failure we keep working without Authorization (the local app is usually open).
         /// </summary>
-        public bool TryLoginOnce(Profile profile)
+        public async Task<bool> TryLoginOnceAsync(Profile profile, CancellationToken cancellationToken = default)
         {
-            lock (LoginGate)
+            if (_sessionKey != null)
+            {
+                return _sessionKey.Length > 0;
+            }
+
+            await LoginAsyncLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
             {
                 if (_sessionKey != null)
                 {
@@ -106,19 +113,19 @@ namespace AIInfluencePrism.Transport
 
                 try
                 {
+                    using (CancellationTokenSource timeout = new CancellationTokenSource(TimeSpan.FromSeconds(45)))
+                    using (CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token, cancellationToken))
                     using (HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, url))
                     using (StringContent empty = new StringContent("{}", Encoding.UTF8, "application/json"))
                     {
                         request.Content = empty;
-                        using (HttpResponseMessage response = SharedClient
-                            .SendAsync(request, HttpCompletionOption.ResponseContentRead, CancellationToken.None)
-                            .GetAwaiter()
-                            .GetResult())
+                        using (HttpResponseMessage response = await SharedClient
+                            .SendAsync(request, HttpCompletionOption.ResponseContentRead, linked.Token)
+                            .ConfigureAwait(false))
                         {
                             string raw = response.Content == null
                                 ? string.Empty
-                                : response.Content.ReadAsStringAsync()
-                                    .ConfigureAwait(false).GetAwaiter().GetResult();
+                                : await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
                             string key = response.IsSuccessStatusCode ? ParseLogin(raw) : null;
                             _sessionKey = key ?? string.Empty;
@@ -143,6 +150,33 @@ namespace AIInfluencePrism.Transport
                     LogSink.Error("player2: auto-login failed; continuing without Authorization.", ex);
                     return false;
                 }
+            }
+            finally
+            {
+                LoginAsyncLock.Release();
+            }
+        }
+
+        /// <summary>
+        /// Auto-login for local mode with fast 2-second timeout.
+        /// Once per session; on failure we keep working without Authorization.
+        /// </summary>
+        public bool TryLoginOnce(Profile profile)
+        {
+            if (_sessionKey != null)
+            {
+                return _sessionKey.Length > 0;
+            }
+
+            try
+            {
+                return Task.Run(() => TryLoginOnceAsync(profile)).GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                _sessionKey = string.Empty;
+                LogSink.Error("player2: synchronous auto-login failed; continuing without Authorization.", ex);
+                return false;
             }
         }
 

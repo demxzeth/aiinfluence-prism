@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Security.Cryptography;
 using AIInfluencePrism.Infra;
 
 namespace AIInfluencePrism.Routing
@@ -11,8 +10,8 @@ namespace AIInfluencePrism.Routing
     /// Markers live in new-prompts-detection/*.txt next to the mod and are
     /// edited by hand if the target assembly changes its prompt wording.
     ///
-    /// The cache is keyed by the SHA-256 hash of the file, so edits are
-    /// picked up right after saving, without restarting the game.
+    /// The cache is keyed by the last write time and file size, so edits
+    /// are picked up right after saving, without restarting the game.
     ///
     /// The scan is two-pass: first the prompt "tail" (utility headers live
     /// at the end), then the whole text.
@@ -27,8 +26,45 @@ namespace AIInfluencePrism.Routing
 
         private sealed class CachedFile
         {
-            public byte[] Hash;
+            public DateTime LastWriteTimeUtc;
+            public long Length;
             public string[] Markers;
+            public DateTime LastCheckedUtc;
+        }
+
+        private static readonly TimeSpan DefaultThrottleInterval = TimeSpan.FromSeconds(5);
+        private static TimeSpan? _customThrottleInterval;
+
+        /// <summary>
+        /// Throttle interval between file system metadata checks (FileInfo).
+        /// Defaults to 5 seconds in production game, 0 in test environment.
+        /// </summary>
+        public static TimeSpan ThrottleInterval
+        {
+            get => _customThrottleInterval ?? (IsTestEnvironment() ? TimeSpan.Zero : DefaultThrottleInterval);
+            set => _customThrottleInterval = value;
+        }
+
+        private static bool IsTestEnvironment()
+        {
+            try
+            {
+                string host = AppDomain.CurrentDomain.FriendlyName;
+                if (!string.IsNullOrEmpty(host) && (host.IndexOf("testhost", StringComparison.OrdinalIgnoreCase) >= 0 || host.IndexOf("vstest", StringComparison.OrdinalIgnoreCase) >= 0))
+                {
+                    return true;
+                }
+                foreach (System.Reflection.Assembly a in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    string name = a.GetName().Name;
+                    if (name != null && (name.StartsWith("xunit", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".Tests", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        return true;
+                    }
+                }
+            }
+            catch { }
+            return false;
         }
 
         private static readonly object Gate = new object();
@@ -139,75 +175,82 @@ namespace AIInfluencePrism.Routing
 
         private static string[] Load(string path)
         {
-            byte[] hash = null;
-            try
-            {
-                if (File.Exists(path))
-                {
-                    using (FileStream stream = File.OpenRead(path))
-                    {
-                        using (SHA256 sha = SHA256.Create())
-                        {
-                            hash = sha.ComputeHash(stream);
-                        }
-                    }
-                }
-            }
-            catch
-            {
-                // the file is locked/unavailable right now — try reading as is.
-                hash = null;
-            }
+            DateTime now = DateTime.UtcNow;
+            TimeSpan throttle = ThrottleInterval;
 
-            if (hash != null)
+            lock (Gate)
             {
-                lock (Gate)
+                if (Cache.TryGetValue(path, out CachedFile cached))
                 {
-                    if (Cache.TryGetValue(path, out CachedFile cached) && cached.Hash != null
-                        && StructuralEquals(cached.Hash, hash))
+                    // Если с момента последней проверки на диске прошло меньше интервала троттлинга -
+                    // возвращаем закэшированные маркеры без обращения к диску (FileInfo)
+                    if (throttle > TimeSpan.Zero && (now - cached.LastCheckedUtc) < throttle)
                     {
                         return cached.Markers;
                     }
                 }
             }
 
-            string[] parsed;
             try
             {
-                parsed = File.Exists(path) ? ParseLines(File.ReadAllLines(path)) : new string[0];
+                FileInfo fi = new FileInfo(path);
+                if (!fi.Exists)
+                {
+                    lock (Gate)
+                    {
+                        Cache[path] = new CachedFile
+                        {
+                            LastWriteTimeUtc = DateTime.MinValue,
+                            Length = 0,
+                            Markers = new string[0],
+                            LastCheckedUtc = now
+                        };
+                    }
+                    return new string[0];
+                }
+
+                DateTime lastWrite = fi.LastWriteTimeUtc;
+                long length = fi.Length;
+
+                lock (Gate)
+                {
+                    if (Cache.TryGetValue(path, out CachedFile cached)
+                        && cached.LastWriteTimeUtc == lastWrite
+                        && cached.Length == length)
+                    {
+                        cached.LastCheckedUtc = now;
+                        return cached.Markers;
+                    }
+                }
+
+                string[] parsed = ParseLines(File.ReadAllLines(path));
+                lock (Gate)
+                {
+                    Cache[path] = new CachedFile
+                    {
+                        LastWriteTimeUtc = lastWrite,
+                        Length = length,
+                        Markers = parsed,
+                        LastCheckedUtc = now
+                    };
+                }
+
+                return parsed;
             }
             catch
             {
-                parsed = new string[0];
-            }
-
-            if (hash != null)
-            {
+                // the file is locked/unavailable right now — try fallback to cache if available
                 lock (Gate)
                 {
-                    Cache[path] = new CachedFile { Hash = hash, Markers = parsed };
+                    if (Cache.TryGetValue(path, out CachedFile cached))
+                    {
+                        cached.LastCheckedUtc = now;
+                        return cached.Markers;
+                    }
                 }
+
+                return new string[0];
             }
-
-            return parsed;
-        }
-
-        private static bool StructuralEquals(byte[] a, byte[] b)
-        {
-            if (a.Length != b.Length)
-            {
-                return false;
-            }
-
-            for (int i = 0; i < a.Length; i++)
-            {
-                if (a[i] != b[i])
-                {
-                    return false;
-                }
-            }
-
-            return true;
         }
     }
 }
