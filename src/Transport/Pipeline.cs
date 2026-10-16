@@ -455,14 +455,10 @@ namespace AIInfluencePrism.Transport
             {
                 using (CancellationTokenSource cts = new CancellationTokenSource(TimeSpan.FromSeconds(60)))
                 {
-                    System.Text.StringBuilder sb = new System.Text.StringBuilder();
-                    sb.Append("--input-format text");
-                    sb.Append(" --model ");
-                    sb.Append(AntigravityTransport.EscapeArgument(model));
-                    sb.Append(" --disable-slash-commands");
+                    string args = AntigravityTransport.BuildCliArguments(model, current.ReasoningEffort, continueSession: false);
 
                     ProcessResult res = AntigravityTransport.RunProcessAsync(
-                        cli, sb.ToString(), 60, cts.Token, "Prism test message. Reply with exactly: pong")
+                        cli, args, 60, cts.Token, "Prism test message. Reply with exactly: pong")
                         .GetAwaiter().GetResult();
                     clock.Stop();
 
