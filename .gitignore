@@ -19,4 +19,9 @@ err.txt
 in.txt
 out.txt
 план.md
+build.bat
+deploy.ps1
+fetch-refs.ps1
+package.ps1
+NEXUS_DESCRIPTION.md
 
