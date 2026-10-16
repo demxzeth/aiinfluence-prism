@@ -1,5 +1,4 @@
 using System;
-using System.Text.RegularExpressions;
 
 namespace AIInfluencePrism.Transport
 {
@@ -166,17 +165,6 @@ namespace AIInfluencePrism.Transport
         public static string Player2LoginUrl(string root, string clientId)
         {
             return V1BaseUrl(root) + "/login/web/" + Uri.EscapeDataString(clientId ?? string.Empty);
-        }
-
-        /// <summary>Masks sensitive query parameters (e.g. key=) before logging or displaying URLs.</summary>
-        public static string MaskUrl(string url)
-        {
-            if (string.IsNullOrEmpty(url))
-            {
-                return url;
-            }
-
-            return Regex.Replace(url, @"([?&]key=)([^&]+)", "$1***...***");
         }
 
         /// <summary>Append a query parameter carefully (respecting an existing "?").</summary>

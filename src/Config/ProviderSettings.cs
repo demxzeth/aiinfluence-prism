@@ -71,7 +71,7 @@ namespace AIInfluencePrism.Config
                     s.RootUrl = "http://127.0.0.1:5001";
                     break;
                 case ProviderKind.Antigravity:
-                    s.Model = "gemini-3.8-flash-high";
+                    s.Model = "gemini-3.7-flash-high";
                     break;
                 case ProviderKind.Player2:
                 case ProviderKind.Custom:

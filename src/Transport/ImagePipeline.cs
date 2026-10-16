@@ -20,14 +20,7 @@ namespace AIInfluencePrism.Transport
     /// </summary>
     public static class ImagePipeline
     {
-        private static readonly HttpClient HttpClient = CreateHttpClient();
-
-        private static HttpClient CreateHttpClient()
-        {
-            HttpClient client = new HttpClient(HttpChatTransport.CreateHandler());
-            client.Timeout = TimeSpan.FromSeconds(120);
-            return client;
-        }
+        private static readonly HttpClient HttpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(120) };
 
         /// <summary>
         /// Generates an image for the given prompt, reporting progress in-game.

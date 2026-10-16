@@ -4,6 +4,16 @@ All notable changes to AIInfluence Prism are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] - 2026-10-16
+
+### Fixed
+
+- **Startup Infinite Loading Loop & Freeze**:
+  - Fixed `CheckHealthAsyncPrefix` in `ImageDispatch` to unconditionally intercept `Player2Client.CheckHealthAsync` when `MasterEnabled` is active, completely eliminating connection timeouts to absent Player2 background services on game startup.
+  - Optimized type discovery in `TargetScanner` and `ImageDispatch` with cached target assembly lookup, resolving main thread `AppDomain.GetAssemblies()` lock contention and LoaderLock during Bannerlord initial loading screens.
+- **MCM Dropdown Model Selection & Display**:
+  - Fixed model dropdown binding and selection persistence in MCM settings screens.
+
 ## [0.4.0] - 2026-10-13
 
 ### Added

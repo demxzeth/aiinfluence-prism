@@ -111,7 +111,7 @@ namespace AIInfluencePrism.Transport
 
             try
             {
-                int timeoutSeconds = profile.TimeoutSeconds <= 0 ? 180 : Math.Max(45, profile.TimeoutSeconds);
+                int timeoutSeconds = profile.TimeoutSeconds < 10 ? 10 : profile.TimeoutSeconds;
                 using (CancellationTokenSource timeout = new CancellationTokenSource(
                     TimeSpan.FromSeconds(timeoutSeconds)))
                 {
@@ -136,8 +136,6 @@ namespace AIInfluencePrism.Transport
                             + Profile.Label(profile.Provider) + " in " + clock.ElapsedMilliseconds + " ms.");
                         return string.Empty;
                     }
-
-                    reply = HttpChatTransport.SanitizeReply(reply);
 
                     LogSink.Always("pipeline[" + scope + "]: " + Profile.Label(profile.Provider)
                         + " replied " + reply.Length + " chars in " + clock.ElapsedMilliseconds + " ms"
@@ -168,12 +166,6 @@ namespace AIInfluencePrism.Transport
                 LogSink.Error("pipeline[" + scope + "]: request failed ("
                     + Profile.Label(profile.Provider) + ", " + clock.ElapsedMilliseconds + " ms"
                     + ", url=" + transport.EndpointUrl(profile) + ").", ex);
-
-                if (scope != ScopeId.Dialogue)
-                {
-                    return string.Empty;
-                }
-
                 return "[Prism] request failed: " + msg;
             }
         }
@@ -232,7 +224,7 @@ namespace AIInfluencePrism.Transport
             try
             {
                 using (CancellationTokenSource timeout = new CancellationTokenSource(
-                    TimeSpan.FromSeconds(45)))
+                    TimeSpan.FromSeconds(10)))
                 {
                     Func<Profile, Task<bool>> probe = ProbeForTests;
                     bool ok = probe != null
@@ -275,7 +267,7 @@ namespace AIInfluencePrism.Transport
             try
             {
                 using (CancellationTokenSource timeout = new CancellationTokenSource(
-                    TimeSpan.FromSeconds(45)))
+                    TimeSpan.FromSeconds(10)))
                 {
                     Func<Profile, Task<bool>> probe = ProbeForTests;
                     bool ok = probe != null
@@ -410,9 +402,9 @@ namespace AIInfluencePrism.Transport
 
             try
             {
-                using (CancellationTokenSource cts = new CancellationTokenSource(TimeSpan.FromSeconds(45)))
+                using (CancellationTokenSource cts = new CancellationTokenSource(TimeSpan.FromSeconds(10)))
                 {
-                    ProcessResult res = AntigravityTransport.RunProcessAsync(cli, "--version", 45, cts.Token)
+                    ProcessResult res = AntigravityTransport.RunProcessAsync(cli, "--version", 10, cts.Token)
                         .GetAwaiter().GetResult();
                     clock.Stop();
 
@@ -447,7 +439,7 @@ namespace AIInfluencePrism.Transport
             string cli = AntigravityTransport.ResolveCliPath(current.AntigravityCliPath);
             string model = !string.IsNullOrWhiteSpace(current.AntigravityModel)
                 ? current.AntigravityModel.Trim()
-                : "gemini-3.8-flash-high";
+                : "gemini-3.7-flash-high";
 
             Stopwatch clock = Stopwatch.StartNew();
 
@@ -455,10 +447,14 @@ namespace AIInfluencePrism.Transport
             {
                 using (CancellationTokenSource cts = new CancellationTokenSource(TimeSpan.FromSeconds(60)))
                 {
-                    string args = AntigravityTransport.BuildCliArguments(model, current.ReasoningEffort, continueSession: false);
+                    System.Text.StringBuilder sb = new System.Text.StringBuilder();
+                    sb.Append("--input-format text");
+                    sb.Append(" --model ");
+                    sb.Append(AntigravityTransport.EscapeArgument(model));
+                    sb.Append(" --disable-slash-commands");
 
                     ProcessResult res = AntigravityTransport.RunProcessAsync(
-                        cli, args, 60, cts.Token, "Prism test message. Reply with exactly: pong")
+                        cli, sb.ToString(), 60, cts.Token, "Prism test message. Reply with exactly: pong")
                         .GetAwaiter().GetResult();
                     clock.Stop();
 
@@ -499,7 +495,7 @@ namespace AIInfluencePrism.Transport
             }
         }
 
-        internal static string FormatErrorMessage(Exception ex)
+        private static string FormatErrorMessage(Exception ex)
         {
             if (ex == null)
             {
@@ -514,17 +510,6 @@ namespace AIInfluencePrism.Transport
             if (ex.InnerException is TransportException innerTe)
             {
                 return FormatErrorMessage(innerTe);
-            }
-
-            if (ex.InnerException is OperationCanceledException innerCancel)
-            {
-                return FormatErrorMessage(innerCancel);
-            }
-
-            if (ex is OperationCanceledException ||
-                (ex.Message != null && ex.Message.IndexOf("task was canceled", StringComparison.OrdinalIgnoreCase) >= 0))
-            {
-                return "Request timed out (model took too long to respond)";
             }
 
             if (ex is TransportException te)
@@ -547,7 +532,7 @@ namespace AIInfluencePrism.Transport
         {
             try
             {
-                return EndpointMapper.MaskUrl(Resolve(profile.Provider).EndpointUrl(profile));
+                return Resolve(profile.Provider).EndpointUrl(profile);
             }
             catch
             {

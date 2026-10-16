@@ -29,42 +29,6 @@ namespace AIInfluencePrism.Routing
             public DateTime LastWriteTimeUtc;
             public long Length;
             public string[] Markers;
-            public DateTime LastCheckedUtc;
-        }
-
-        private static readonly TimeSpan DefaultThrottleInterval = TimeSpan.FromSeconds(5);
-        private static TimeSpan? _customThrottleInterval;
-
-        /// <summary>
-        /// Throttle interval between file system metadata checks (FileInfo).
-        /// Defaults to 5 seconds in production game, 0 in test environment.
-        /// </summary>
-        public static TimeSpan ThrottleInterval
-        {
-            get => _customThrottleInterval ?? (IsTestEnvironment() ? TimeSpan.Zero : DefaultThrottleInterval);
-            set => _customThrottleInterval = value;
-        }
-
-        private static bool IsTestEnvironment()
-        {
-            try
-            {
-                string host = AppDomain.CurrentDomain.FriendlyName;
-                if (!string.IsNullOrEmpty(host) && (host.IndexOf("testhost", StringComparison.OrdinalIgnoreCase) >= 0 || host.IndexOf("vstest", StringComparison.OrdinalIgnoreCase) >= 0))
-                {
-                    return true;
-                }
-                foreach (System.Reflection.Assembly a in AppDomain.CurrentDomain.GetAssemblies())
-                {
-                    string name = a.GetName().Name;
-                    if (name != null && (name.StartsWith("xunit", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".Tests", StringComparison.OrdinalIgnoreCase)))
-                    {
-                        return true;
-                    }
-                }
-            }
-            catch { }
-            return false;
         }
 
         private static readonly object Gate = new object();
@@ -175,37 +139,11 @@ namespace AIInfluencePrism.Routing
 
         private static string[] Load(string path)
         {
-            DateTime now = DateTime.UtcNow;
-            TimeSpan throttle = ThrottleInterval;
-
-            lock (Gate)
-            {
-                if (Cache.TryGetValue(path, out CachedFile cached))
-                {
-                    // Если с момента последней проверки на диске прошло меньше интервала троттлинга -
-                    // возвращаем закэшированные маркеры без обращения к диску (FileInfo)
-                    if (throttle > TimeSpan.Zero && (now - cached.LastCheckedUtc) < throttle)
-                    {
-                        return cached.Markers;
-                    }
-                }
-            }
-
             try
             {
                 FileInfo fi = new FileInfo(path);
                 if (!fi.Exists)
                 {
-                    lock (Gate)
-                    {
-                        Cache[path] = new CachedFile
-                        {
-                            LastWriteTimeUtc = DateTime.MinValue,
-                            Length = 0,
-                            Markers = new string[0],
-                            LastCheckedUtc = now
-                        };
-                    }
                     return new string[0];
                 }
 
@@ -218,7 +156,6 @@ namespace AIInfluencePrism.Routing
                         && cached.LastWriteTimeUtc == lastWrite
                         && cached.Length == length)
                     {
-                        cached.LastCheckedUtc = now;
                         return cached.Markers;
                     }
                 }
@@ -230,8 +167,7 @@ namespace AIInfluencePrism.Routing
                     {
                         LastWriteTimeUtc = lastWrite,
                         Length = length,
-                        Markers = parsed,
-                        LastCheckedUtc = now
+                        Markers = parsed
                     };
                 }
 
@@ -244,7 +180,6 @@ namespace AIInfluencePrism.Routing
                 {
                     if (Cache.TryGetValue(path, out CachedFile cached))
                     {
-                        cached.LastCheckedUtc = now;
                         return cached.Markers;
                     }
                 }

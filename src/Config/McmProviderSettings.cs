@@ -143,46 +143,15 @@ namespace AIInfluencePrism.Config
             set => _defaultProviderDropdown = value;
         }
 
-        private static string MaskKey(string key)
-        {
-            if (string.IsNullOrEmpty(key))
-            {
-                return string.Empty;
-            }
-
-            key = key.Trim();
-            if (key.Length <= 8)
-            {
-                return new string('*', key.Length);
-            }
-
-            return key.Substring(0, 3) + "***...***" + key.Substring(key.Length - 4);
-        }
-
-        private static bool IsMasked(string value)
-        {
-            if (string.IsNullOrEmpty(value))
-            {
-                return false;
-            }
-
-            return value.Contains("***") || value.Contains("...") || value.Contains("[REDACTED]");
-        }
-
         [SettingPropertyGroup("Default Provider Profile", GroupOrder = 3)]
         [SettingPropertyText("API Key", Order = 2, RequireRestart = false,
-            HintText = "API key for the default provider. Masked for stream safety (e.g. sk-***...1234). Paste a new key to update, or clear to delete.")]
+            HintText = "API key for the default provider.")]
         public string DefaultApiKey
         {
-            get => MaskKey(ProfileBook.Current.ApiKey);
+            get => ProfileBook.Current.ApiKey ?? string.Empty;
             set
             {
-                string v = (value ?? string.Empty).Trim();
-                if (IsMasked(v))
-                {
-                    return;
-                }
-
+                string v = value ?? string.Empty;
                 if (ProfileBook.Current.ApiKey != v)
                 {
                     ProfileBook.Current.ApiKey = v;
@@ -356,18 +325,13 @@ namespace AIInfluencePrism.Config
 
         [SettingPropertyGroup("Image Generation Provider", GroupOrder = 4)]
         [SettingPropertyText("API Key", Order = 3, RequireRestart = false,
-            HintText = "API key for image generation. Masked for stream safety. If left empty, inherits key from text provider. Paste a new key to update, or clear to delete.")]
+            HintText = "API key for image generation. Not needed for Free (Pollinations). If left empty, inherits key from text provider.")]
         public string ImageApiKey
         {
-            get => MaskKey(ProfileBook.Current.ImageApiKey);
+            get => ProfileBook.Current.ImageApiKey ?? string.Empty;
             set
             {
-                string v = (value ?? string.Empty).Trim();
-                if (IsMasked(v))
-                {
-                    return;
-                }
-
+                string v = value ?? string.Empty;
                 if (ProfileBook.Current.ImageApiKey != v)
                 {
                     ProfileBook.Current.ImageApiKey = v;
@@ -603,27 +567,24 @@ namespace AIInfluencePrism.Config
                                 selIdx = 0;
                             }
 
-                            McmUiHelpers.EnqueueMainThreadAction(() =>
+                            if (_imageModelDropdown != null)
                             {
-                                if (_imageModelDropdown != null)
+                                _suppressImageDropdownSync = true;
+                                try
                                 {
-                                    _suppressImageDropdownSync = true;
-                                    try
-                                    {
-                                        _imageModelDropdown.Clear();
-                                        foreach (string m in items) _imageModelDropdown.Add(m);
-                                        _imageModelDropdown.SelectedIndex = (selIdx >= 0 && selIdx < items.Count) ? selIdx : 0;
-                                    }
-                                    finally
-                                    {
-                                        _suppressImageDropdownSync = false;
-                                    }
+                                    _imageModelDropdown.Clear();
+                                    foreach (string m in items) _imageModelDropdown.Add(m);
+                                    _imageModelDropdown.SelectedIndex = (selIdx >= 0 && selIdx < items.Count) ? selIdx : 0;
                                 }
+                                finally
+                                {
+                                    _suppressImageDropdownSync = false;
+                                }
+                            }
 
-                                OnPropertyChanged(nameof(ImageModelDropdown));
-                                McmUiHelpers.TryRefreshDropdownWithItems(nameof(ImageModelDropdown), items, selIdx, nameof(ImageModel), profile.ImageModel ?? string.Empty);
-                                McmUiHelpers.TryRefreshActiveScreenUi();
-                            });
+                            OnPropertyChanged(nameof(ImageModelDropdown));
+                            McmUiHelpers.TryRefreshDropdownWithItems(nameof(ImageModelDropdown), items, selIdx, nameof(ImageModel), profile.ImageModel ?? string.Empty);
+                            McmUiHelpers.TryRefreshActiveScreenUi();
 
                             ChatNotices.Show($"Found {models.Count} image models for {provider}.", "Image", 0.35f, 0.85f, 0.35f);
                         }
@@ -772,10 +733,10 @@ namespace AIInfluencePrism.Config
 
         [SettingPropertyGroup("Antigravity", GroupOrder = 5)]
         [SettingPropertyText("Model", Order = 2, RequireRestart = false,
-            HintText = "Model name for Antigravity CLI (e.g. gemini-3.8-flash-high).")]
+            HintText = "Model name for Antigravity CLI (e.g. gemini-3.7-flash-high).")]
         public string AntigravityModel
         {
-            get => ProfileBook.Current.AntigravityModel ?? "gemini-3.8-flash-high";
+            get => ProfileBook.Current.AntigravityModel ?? "gemini-3.7-flash-high";
             set
             {
                 string v = (value ?? string.Empty).Trim();

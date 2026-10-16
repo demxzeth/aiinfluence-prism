@@ -22,7 +22,14 @@ namespace AIInfluencePrism.Hook
         /// <summary>Full name of the AI-request entry point of the target assembly.</summary>
         public const string EntryTypeFullName = "AIInfluence.API.AIClient";
 
+        private static Assembly _targetAssembly;
         private static Type _entryType;
+
+        /// <summary>The cached AIInfluence assembly (or null if not loaded yet in AppDomain).</summary>
+        public static Assembly TargetAssembly
+        {
+            get { return _targetAssembly ?? (_targetAssembly = FindTargetAssembly()); }
+        }
 
         /// <summary>The AIInfluence.API.AIClient type (or null if the target type is not loaded yet).</summary>
         public static Type EntryType
@@ -82,6 +89,7 @@ namespace AIInfluencePrism.Hook
         public static void Reset()
         {
             _entryType = null;
+            _targetAssembly = null;
         }
 
         private static int Count(IReadOnlyList<HookTarget> targets, TargetRole role)
@@ -98,22 +106,19 @@ namespace AIInfluencePrism.Hook
             return n;
         }
 
-        private static Type FindEntryType()
+        /// <summary>
+        /// Locates the AIInfluence assembly in the current AppDomain by name.
+        /// Does not throw on partially loaded assemblies.
+        /// </summary>
+        public static Assembly FindTargetAssembly()
         {
-            Type type = Type.GetType(EntryTypeFullName, throwOnError: false);
-            if (type != null)
-            {
-                return type;
-            }
-
             foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
             {
                 try
                 {
-                    type = assembly.GetType(EntryTypeFullName, throwOnError: false);
-                    if (type != null)
+                    if (string.Equals(assembly.GetName().Name, "AIInfluence", StringComparison.OrdinalIgnoreCase))
                     {
-                        return type;
+                        return assembly;
                     }
                 }
                 catch
@@ -123,6 +128,27 @@ namespace AIInfluencePrism.Hook
             }
 
             return null;
+        }
+
+        private static Type FindEntryType()
+        {
+            Assembly asm = TargetAssembly;
+            if (asm != null)
+            {
+                try
+                {
+                    Type fromAsm = asm.GetType(EntryTypeFullName, throwOnError: false);
+                    if (fromAsm != null)
+                    {
+                        return fromAsm;
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            return Type.GetType(EntryTypeFullName, throwOnError: false);
         }
     }
 }

@@ -76,8 +76,6 @@ namespace AIInfluencePrism.Transport
                         { "type", "enabled" },
                         { "budget_tokens", budget }
                     };
-                    // Anthropic API requires temperature == 1.0 when thinking is enabled (HTTP 400 otherwise).
-                    body["temperature"] = 1.0;
                 }
             }
 

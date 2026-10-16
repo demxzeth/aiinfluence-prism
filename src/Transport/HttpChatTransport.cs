@@ -6,7 +6,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using AIInfluencePrism.Config;
 using AIInfluencePrism.Infra;
-using AIInfluencePrism.Post;
 
 namespace AIInfluencePrism.Transport
 {
@@ -52,39 +51,7 @@ namespace AIInfluencePrism.Transport
     /// </summary>
     public abstract class HttpChatTransport : IChatTransport
     {
-        private static readonly object _clientLock = new object();
         private static HttpClient _shared;
-
-        static HttpChatTransport()
-        {
-            EnsureTls12();
-            try
-            {
-                ServicePointManager.DefaultConnectionLimit = 64;
-            }
-            catch
-            {
-                // the platform decides itself; continue quietly.
-            }
-        }
-
-        /// <summary>
-        /// Creates an HttpClientHandler configured with system proxy and local bypass.
-        /// </summary>
-        public static HttpClientHandler CreateHandler()
-        {
-            IWebProxy proxy = WebRequest.GetSystemWebProxy();
-            if (proxy is WebProxy webProxy)
-            {
-                webProxy.BypassProxyOnLocal = true;
-            }
-
-            return new HttpClientHandler
-            {
-                Proxy = proxy,
-                UseProxy = true
-            };
-        }
 
         public static HttpClient SharedClient
         {
@@ -92,15 +59,9 @@ namespace AIInfluencePrism.Transport
             {
                 if (_shared == null)
                 {
-                    lock (_clientLock)
-                    {
-                        if (_shared == null)
-                        {
-                            HttpClient client = new HttpClient(CreateHandler());
-                            client.Timeout = Timeout.InfiniteTimeSpan;
-                            _shared = client;
-                        }
-                    }
+                    HttpClient client = new HttpClient();
+                    client.Timeout = Timeout.InfiniteTimeSpan;
+                    _shared = client;
                 }
 
                 return _shared;
@@ -127,7 +88,7 @@ namespace AIInfluencePrism.Transport
 
             string url = EndpointUrl(profile);
             string body = BuildRequestBody(turn, options, profile);
-            LogSink.Info("http: POST " + EndpointMapper.MaskUrl(url) + " (" + body.Length + " bytes).");
+            LogSink.Info("http: POST " + url + " (" + body.Length + " bytes).");
 
             using (HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, url))
             using (StringContent content = new StringContent(body, Encoding.UTF8, "application/json"))
@@ -158,7 +119,7 @@ namespace AIInfluencePrism.Transport
                         throw new TransportException(code, snippet);
                     }
 
-                    return SanitizeReply(ParseReply(raw));
+                    return ParseReply(raw);
                 }
             }
         }
@@ -176,7 +137,7 @@ namespace AIInfluencePrism.Transport
                         .ConfigureAwait(false))
                     {
                         int code = (int)response.StatusCode;
-                        LogSink.Info("probe: " + EndpointMapper.MaskUrl(url) + " -> " + code);
+                        LogSink.Info("probe: " + url + " -> " + code);
 
                         if (response.IsSuccessStatusCode)
                         {
@@ -206,7 +167,7 @@ namespace AIInfluencePrism.Transport
             }
             catch (Exception ex)
             {
-                LogSink.Error("probe: " + EndpointMapper.MaskUrl(url) + " failed.", ex);
+                LogSink.Error("probe: " + url + " failed.", ex);
                 throw;
             }
         }
@@ -227,46 +188,6 @@ namespace AIInfluencePrism.Transport
 
             string flat = text.Replace("\r", " ").Replace("\n", " ").Trim();
             return flat.Length <= 300 ? flat : flat.Substring(0, 300) + "…";
-        }
-
-        /// <summary>
-        /// Strips markdown code fences (```json ... ```) and repairs malformed JSON
-        /// using JsonHealer if JsonRepairEnabled is true.
-        /// </summary>
-        public static string SanitizeReply(string text)
-        {
-            if (string.IsNullOrWhiteSpace(text))
-            {
-                return text;
-            }
-
-            string trimmed = text.Trim();
-
-            // Strip markdown code fences (e.g. ```json ... ``` or ``` ... ```)
-            if (trimmed.StartsWith("```", StringComparison.Ordinal))
-            {
-                int firstNewline = trimmed.IndexOf('\n');
-                if (firstNewline > 0)
-                {
-                    int lastFence = trimmed.LastIndexOf("```", StringComparison.Ordinal);
-                    if (lastFence > firstNewline)
-                    {
-                        trimmed = trimmed.Substring(firstNewline + 1, lastFence - firstNewline - 1).Trim();
-                    }
-                }
-            }
-
-            // Heal JSON if needed and repair is enabled
-            if (ProfileBook.Current.JsonRepairEnabled && trimmed.Contains("{"))
-            {
-                string healed = JsonHealer.Heal(trimmed);
-                if (!string.IsNullOrEmpty(healed))
-                {
-                    return healed;
-                }
-            }
-
-            return trimmed;
         }
 
         /// <summary>TLS 1.2 for net472 (some providers only speak it).</summary>

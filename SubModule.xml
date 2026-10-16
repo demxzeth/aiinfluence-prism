@@ -3,7 +3,7 @@
         xsi:noNamespaceSchemaLocation="https://raw.githubusercontent.com/BUTR/Bannerlord.XmlSchemas/master/SubModule.xsd">
   <Name value="AIInfluence Prism" />
   <Id value="AIInfluencePrism" />
-  <Version value="v0.5.1" />
+  <Version value="v0.5.2" />
   <Author value="demxzeth" />
   <!-- See README: routes AIInfluence to any model provider. -->
   <Official value="false" />

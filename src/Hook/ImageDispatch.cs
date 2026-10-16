@@ -118,9 +118,7 @@ namespace AIInfluencePrism.Hook
         {
             try
             {
-                if (Config.ProfileBook.Current.MasterEnabled &&
-                    (Config.ProfileBook.Current.Scope(ScopeId.Dialogue).GenerateImages ||
-                     Config.ProfileBook.Current.Scope(ScopeId.Events).GenerateImages))
+                if (Config.ProfileBook.Current.MasterEnabled)
                 {
                     __result = Task.FromResult(true);
                     return false;
@@ -319,24 +317,29 @@ namespace AIInfluencePrism.Hook
 
         private static Type FindType(string fullName)
         {
-            Type t = AccessTools.TypeByName(fullName);
-            if (t != null) return t;
-
-            foreach (Assembly asm in AppDomain.CurrentDomain.GetAssemblies())
+            Assembly asm = TargetScanner.TargetAssembly;
+            if (asm != null)
             {
                 try
                 {
-                    t = asm.GetType(fullName, false);
+                    Type t = asm.GetType(fullName, false);
                     if (t != null) return t;
                 }
                 catch { }
             }
-            return null;
+
+            Type direct = Type.GetType(fullName, false);
+            if (direct != null) return direct;
+
+            return AccessTools.TypeByName(fullName);
         }
 
         public static void Install(Harmony harmony)
         {
             if (harmony == null || Installed) return;
+
+            // Early exit if AIInfluence assembly is not loaded yet in AppDomain
+            if (TargetScanner.TargetAssembly == null) return;
 
             // 1. Player2Client hooks
             if (!_p2Patched)

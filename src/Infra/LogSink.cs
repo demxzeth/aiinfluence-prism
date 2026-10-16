@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using System.Text.RegularExpressions;
 
 namespace AIInfluencePrism.Infra
 {
@@ -110,76 +109,12 @@ namespace AIInfluencePrism.Infra
             }
         }
 
-        private static readonly Regex KeyParamRegex = new Regex(
-            @"([?&]key=)([^&\s""',;]+)",
-            RegexOptions.Compiled | RegexOptions.IgnoreCase);
-
-        private static readonly Regex BearerRegex = new Regex(
-            @"\b(Bearer\s+)([^\s""',;]+)",
-            RegexOptions.Compiled | RegexOptions.IgnoreCase);
-
-        private static readonly Regex ApiKeyRegex = new Regex(
-            @"([""']?(?:x-goog-api-key|x-api-key|api-?key)[""']?[\s:=]+)([""']?)([^""'\s,;&]+)([""']?)",
-            RegexOptions.Compiled | RegexOptions.IgnoreCase);
-
-        /// <summary>
-        /// Masks API keys and sensitive tokens so they never get written to log files in plain text.
-        /// </summary>
-        public static string Sanitize(string message)
-        {
-            if (string.IsNullOrEmpty(message))
-            {
-                return message;
-            }
-
-            if (message.IndexOf("key", StringComparison.OrdinalIgnoreCase) < 0 &&
-                message.IndexOf("Bearer", StringComparison.OrdinalIgnoreCase) < 0)
-            {
-                return message;
-            }
-
-            try
-            {
-                string result = KeyParamRegex.Replace(message, m => m.Groups[1].Value + MaskSecret(m.Groups[2].Value));
-                result = BearerRegex.Replace(result, m => m.Groups[1].Value + MaskSecret(m.Groups[2].Value));
-                result = ApiKeyRegex.Replace(result, m => m.Groups[1].Value + m.Groups[2].Value + MaskSecret(m.Groups[3].Value) + m.Groups[4].Value);
-                return result;
-            }
-            catch
-            {
-                return message;
-            }
-        }
-
-        private static string MaskSecret(string val)
-        {
-            if (string.IsNullOrEmpty(val))
-            {
-                return "***";
-            }
-
-            if (val.IndexOf("[REDACTED]", StringComparison.OrdinalIgnoreCase) >= 0 || val.Contains("***"))
-            {
-                return val;
-            }
-
-            val = val.Trim();
-            if (val.Length <= 6)
-            {
-                return "***";
-            }
-
-            return val.Substring(0, 4) + "***";
-        }
-
         private static void Write(string level, string message)
         {
             if (!Enabled)
             {
                 return;
             }
-
-            string sanitized = Sanitize(message);
 
             lock (Gate)
             {
@@ -192,7 +127,7 @@ namespace AIInfluencePrism.Infra
                 try
                 {
                     writer.WriteLine(
-                        DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + " [" + level + "] " + sanitized);
+                        DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + " [" + level + "] " + message);
                 }
                 catch
                 {

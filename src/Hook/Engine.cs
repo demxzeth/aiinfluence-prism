@@ -85,10 +85,10 @@ namespace AIInfluencePrism.Hook
             {
                 ImageDispatch.Install(_harmony);
                 Installer.Install(_harmony);
-                if (Installer.PatchedCount > 0 && (ImageDispatch.Installed || _attempts >= 10))
+                if (Installer.PatchedCount > 0)
                 {
                     _installed = true;
-                    LogSink.Always("hooks installed: " + Installer.PatchedCount + " target method(s), image dispatch: " + (ImageDispatch.Installed ? "ready" : "partial/deferred") + ".");
+                    LogSink.Always("hooks installed: " + Installer.PatchedCount + " target method(s).");
                 }
                 else
                 {

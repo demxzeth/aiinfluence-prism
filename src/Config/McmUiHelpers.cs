@@ -144,52 +144,11 @@ namespace AIInfluencePrism.Config
             }
         }
 
-        private static readonly System.Collections.Concurrent.ConcurrentQueue<Action> MainThreadQueue =
-            new System.Collections.Concurrent.ConcurrentQueue<Action>();
-
-        public static void EnqueueMainThreadAction(Action action)
-        {
-            if (action != null)
-            {
-                MainThreadQueue.Enqueue(action);
-            }
-        }
-
-        public static void ProcessMainThreadActions()
-        {
-            while (MainThreadQueue.TryDequeue(out Action action))
-            {
-                try
-                {
-                    action?.Invoke();
-                }
-                catch (Exception ex)
-                {
-                    LogSink.Warn("mcm: action execution failed: " + ex.Message);
-                }
-            }
-        }
-
-        public static bool IsMainThread
-        {
-            get
-            {
-                int mainId = AIInfluencePrism.PrismCore.SubModule.MainThreadId;
-                return mainId == 0 || System.Threading.Thread.CurrentThread.ManagedThreadId == mainId;
-            }
-        }
-
         /// <summary>
         /// Forces active MCM Gauntlet UI widgets to re-read and display current property values.
         /// </summary>
         public static void TryRefreshActiveScreenUi()
         {
-            if (!IsMainThread)
-            {
-                EnqueueMainThreadAction(() => TryRefreshActiveScreenUi());
-                return;
-            }
-
             try
             {
                 object topScreen = TaleWorlds.ScreenSystem.ScreenManager.TopScreen;
@@ -216,20 +175,15 @@ namespace AIInfluencePrism.Config
                 var groups = groupsProp.GetValue(settingsVM) as System.Collections.IEnumerable;
                 if (groups == null) return;
 
-                var groupList = new System.Collections.Generic.List<object>();
-                foreach (object g in groups) { if (g != null) groupList.Add(g); }
-
-                foreach (object group in groupList)
+                foreach (object group in groups)
                 {
+                    if (group == null) continue;
                     var propsProp = group.GetType().GetProperty("SettingProperties");
                     if (propsProp == null) continue;
                     var props = propsProp.GetValue(group) as System.Collections.IEnumerable;
                     if (props == null) continue;
 
-                    var propList = new System.Collections.Generic.List<object>();
-                    foreach (object p in props) { if (p != null) propList.Add(p); }
-
-                    foreach (object spVM in propList)
+                    foreach (object spVM in props)
                     {
                         if (spVM == null) continue;
 
@@ -276,13 +230,6 @@ namespace AIInfluencePrism.Config
         /// </summary>
         public static void TryRefreshDropdownWithItems(string dropdownPropertyName, System.Collections.Generic.List<string> items, int selectedIndex, string textPropertyName, string textValue)
         {
-            if (!IsMainThread)
-            {
-                var copyItems = items != null ? new System.Collections.Generic.List<string>(items) : null;
-                EnqueueMainThreadAction(() => TryRefreshDropdownWithItems(dropdownPropertyName, copyItems, selectedIndex, textPropertyName, textValue));
-                return;
-            }
-
             try
             {
                 object topScreen = TaleWorlds.ScreenSystem.ScreenManager.TopScreen;
@@ -303,23 +250,18 @@ namespace AIInfluencePrism.Config
                 var groups = groupsProp.GetValue(settingsVM) as System.Collections.IEnumerable;
                 if (groups == null) return;
 
-                var groupList = new System.Collections.Generic.List<object>();
-                foreach (object g in groups) { if (g != null) groupList.Add(g); }
-
                 bool matchedDropdown = false;
                 bool matchedText = false;
 
-                foreach (object group in groupList)
+                foreach (object group in groups)
                 {
+                    if (group == null) continue;
                     var propsProp = group.GetType().GetProperty("SettingProperties");
                     if (propsProp == null) continue;
                     var props = propsProp.GetValue(group) as System.Collections.IEnumerable;
                     if (props == null) continue;
 
-                    var propList = new System.Collections.Generic.List<object>();
-                    foreach (object p in props) { if (p != null) propList.Add(p); }
-
-                    foreach (object spVM in propList)
+                    foreach (object spVM in props)
                     {
                         if (spVM == null) continue;
                         var defProp = spVM.GetType().GetProperty("SettingPropertyDefinition");

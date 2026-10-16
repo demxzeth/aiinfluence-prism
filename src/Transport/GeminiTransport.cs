@@ -18,13 +18,10 @@ namespace AIInfluencePrism.Transport
             get { return ProviderKind.Gemini; }
         }
 
-        public const string DefaultModel = "gemini-3.8-flash";
-
         public override string EndpointUrl(Profile profile)
         {
             ModelOptions options = ModelOptions.FromProfile(profile);
-            string model = !string.IsNullOrWhiteSpace(options.Model) ? options.Model.Trim() : DefaultModel;
-            return EndpointMapper.GeminiGenerateUrl(profile.EffectiveRoot(), model);
+            return EndpointMapper.GeminiGenerateUrl(profile.EffectiveRoot(), options.Model);
         }
 
         public override string BuildRequestBody(ChatTurn turn, ModelOptions options, Profile profile)

@@ -57,7 +57,13 @@ namespace AIInfluencePrism.Config
                     {
                         Path.Combine(root, "GUI", "prism_logo.png"),
                         Path.Combine(root, "GUI", "prism_banner.png"),
-                        Path.Combine(root, "GUI", "prism_banner.jpg")
+                        Path.Combine(root, "GUI", "prism_banner.jpg"),
+                        @"Y:\SteamLibrary\steamapps\common\Mount & Blade II Bannerlord\Modules\AIInfluencePrism\GUI\prism_logo.png",
+                        @"Y:\SteamLibrary\steamapps\common\Mount & Blade II Bannerlord\Modules\AIInfluencePrism\GUI\prism_banner.png",
+                        @"Z:\AIInfluenceClide\AIInfluencePrism\GUI\prism_logo.png",
+                        @"Z:\PRISMLOGO.png",
+                        @"Z:\PRISMBANNER.jpg",
+                        @"Z:\PRISM.jpg"
                     };
 
                     string found = null;

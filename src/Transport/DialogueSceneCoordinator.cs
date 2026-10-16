@@ -1,6 +1,5 @@
 using System;
 using System.Collections;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Text;
@@ -33,40 +32,14 @@ namespace AIInfluencePrism.Transport
         private static string _cachedHeroId;
 
         /// <summary>
-        /// Clears cached dialogue character references to prevent memory leaks when dialogue finishes.
-        /// </summary>
-        public static void ClearDialogueReferences()
-        {
-            lock (SyncLock)
-            {
-                _cachedDialogueReferences = null;
-                _cachedHeroId = null;
-            }
-        }
-
-        /// <summary>
         /// Stores character reference image sheets captured during dialogue so that subsequent
         /// concurrent generation turns in the same conversation retain exact character likeness.
         /// </summary>
         public static void SetDialogueReferences(string heroId, IList<byte[]> references)
         {
+            if (references == null || references.Count == 0) return;
             lock (SyncLock)
             {
-                // При смене собеседника освобождаем память от старого кэша
-                if (_cachedHeroId != null && heroId != null &&
-                    !string.Equals(_cachedHeroId, heroId, StringComparison.OrdinalIgnoreCase))
-                {
-                    _cachedDialogueReferences = null;
-                    _cachedHeroId = null;
-                }
-
-                if (references == null || references.Count == 0)
-                {
-                    _cachedDialogueReferences = null;
-                    _cachedHeroId = null;
-                    return;
-                }
-
                 _cachedHeroId = heroId ?? "default_dialogue";
                 _cachedDialogueReferences = references;
             }
@@ -74,27 +47,15 @@ namespace AIInfluencePrism.Transport
 
         /// <summary>
         /// Retrieves character reference images for the given hero if previously cached.
-        /// If a different hero is requested, automatically evicts stale dialogue references.
         /// </summary>
         public static IList<byte[]> GetDialogueReferences(string heroId)
         {
             lock (SyncLock)
             {
-                if (_cachedDialogueReferences != null)
+                if (_cachedDialogueReferences != null &&
+                    (_cachedHeroId == null || string.Equals(_cachedHeroId, heroId, StringComparison.OrdinalIgnoreCase)))
                 {
-                    // Если собеседник сменился — очищаем старый кэш для предотвращения утечки памяти
-                    if (_cachedHeroId != null && heroId != null &&
-                        !string.Equals(_cachedHeroId, heroId, StringComparison.OrdinalIgnoreCase))
-                    {
-                        _cachedDialogueReferences = null;
-                        _cachedHeroId = null;
-                        return null;
-                    }
-
-                    if (_cachedHeroId == null || string.Equals(_cachedHeroId, heroId, StringComparison.OrdinalIgnoreCase))
-                    {
-                        return _cachedDialogueReferences;
-                    }
+                    return _cachedDialogueReferences;
                 }
                 return null;
             }
@@ -115,24 +76,9 @@ namespace AIInfluencePrism.Transport
                 }
 
                 object npc = ResolveConversationHero();
-                if (npc == null)
-                {
-                    // Диалог завершен или собеседника нет — очищаем кэш ссылочных изображений
-                    ClearDialogueReferences();
-                    return;
-                }
+                object player = ResolveMainHero();
 
                 string heroId = GetHeroStringId(npc) ?? "default_dialogue";
-                lock (SyncLock)
-                {
-                    if (_cachedHeroId != null && !string.Equals(_cachedHeroId, heroId, StringComparison.OrdinalIgnoreCase))
-                    {
-                        _cachedDialogueReferences = null;
-                        _cachedHeroId = null;
-                    }
-                }
-
-                object player = ResolveMainHero();
                 IList<byte[]> references = GetDialogueReferences(heroId);
 
                 // For dialogue, we strictly avoid text-to-image without character reference sheets.
@@ -192,13 +138,11 @@ namespace AIInfluencePrism.Transport
                     return false;
                 }
 
-                // Discard tasks older than 90 seconds (dialogue ended or abandoned)
+                // Discard tasks older than 90 seconds
                 if ((DateTime.UtcNow - _pendingTaskTimestamp).TotalSeconds > 90)
                 {
                     _pendingImageTask = null;
                     _pendingHeroId = null;
-                    _cachedDialogueReferences = null;
-                    _cachedHeroId = null;
                     return false;
                 }
 
@@ -585,10 +529,10 @@ namespace AIInfluencePrism.Transport
                 // Time of day & Season from CampaignTime
                 try
                 {
-                    Type ctType = GetCachedType("TaleWorlds.CampaignSystem.CampaignTime, TaleWorlds.CampaignSystem");
+                    Type ctType = Type.GetType("TaleWorlds.CampaignSystem.CampaignTime, TaleWorlds.CampaignSystem");
                     if (ctType != null)
                     {
-                        PropertyInfo nowProp = GetCachedProperty(ctType, "Now", BindingFlags.Public | BindingFlags.Static);
+                        PropertyInfo nowProp = ctType.GetProperty("Now", BindingFlags.Public | BindingFlags.Static);
                         if (nowProp != null)
                         {
                             object now = nowProp.GetValue(null);
@@ -603,7 +547,7 @@ namespace AIInfluencePrism.Transport
 
                                 sb.Append(", at ").Append(tod);
 
-                                PropertyInfo seasonProp = GetCachedProperty(now.GetType(), "GetSeasonOfYear", BindingFlags.Public | BindingFlags.Instance);
+                                PropertyInfo seasonProp = now.GetType().GetProperty("GetSeasonOfYear");
                                 if (seasonProp != null)
                                 {
                                     object seasonVal = seasonProp.GetValue(now);
@@ -653,92 +597,29 @@ namespace AIInfluencePrism.Transport
             return string.Empty;
         }
 
-        private struct PropertyCacheKey : IEquatable<PropertyCacheKey>
-        {
-            public readonly Type Type;
-            public readonly string Name;
-            public readonly BindingFlags Flags;
-
-            public PropertyCacheKey(Type type, string name, BindingFlags flags)
-            {
-                Type = type;
-                Name = name;
-                Flags = flags;
-            }
-
-            public bool Equals(PropertyCacheKey other) =>
-                Type == other.Type &&
-                Flags == other.Flags &&
-                string.Equals(Name, other.Name, StringComparison.Ordinal);
-
-            public override bool Equals(object obj) => obj is PropertyCacheKey other && Equals(other);
-
-            public override int GetHashCode()
-            {
-                unchecked
-                {
-                    int hash = (Type?.GetHashCode() ?? 0);
-                    hash = (hash * 397) ^ (Name != null ? StringComparer.Ordinal.GetHashCode(Name) : 0);
-                    hash = (hash * 397) ^ (int)Flags;
-                    return hash;
-                }
-            }
-        }
-
-        private static readonly ConcurrentDictionary<PropertyCacheKey, PropertyInfo> PropertyCache =
-            new ConcurrentDictionary<PropertyCacheKey, PropertyInfo>();
-
-        private static readonly ConcurrentDictionary<string, Type> TypeCache =
-            new ConcurrentDictionary<string, Type>(StringComparer.Ordinal);
-
-        private static Type GetCachedType(string typeName)
-        {
-            if (string.IsNullOrEmpty(typeName)) return null;
-            return TypeCache.GetOrAdd(typeName, name =>
-            {
-                try { return Type.GetType(name); }
-                catch { return null; }
-            });
-        }
-
-        private static PropertyInfo GetCachedProperty(Type type, string propertyName, BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
-        {
-            if (type == null || string.IsNullOrEmpty(propertyName)) return null;
-            PropertyCacheKey key = new PropertyCacheKey(type, propertyName, flags);
-            return PropertyCache.GetOrAdd(key, k =>
-            {
-                try { return k.Type.GetProperty(k.Name, k.Flags); }
-                catch { return null; }
-            });
-        }
-
         public static object ResolveConversationHero()
         {
             try
             {
-                Type campType = GetCachedType("TaleWorlds.CampaignSystem.Campaign, TaleWorlds.CampaignSystem");
+                Type campType = Type.GetType("TaleWorlds.CampaignSystem.Campaign, TaleWorlds.CampaignSystem");
                 if (campType != null)
                 {
-                    PropertyInfo campProp = GetCachedProperty(campType, "Current", BindingFlags.Public | BindingFlags.Static);
-                    object camp = campProp?.GetValue(null);
+                    object camp = campType.GetProperty("Current", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
                     if (camp != null)
                     {
-                        PropertyInfo convMgrProp = GetCachedProperty(camp.GetType(), "ConversationManager", BindingFlags.Public | BindingFlags.Instance);
-                        object convMgr = convMgrProp?.GetValue(camp);
+                        object convMgr = camp.GetType().GetProperty("ConversationManager")?.GetValue(camp);
                         if (convMgr != null)
                         {
-                            PropertyInfo heroProp = GetCachedProperty(convMgr.GetType(), "OneToOneConversationHero", BindingFlags.Public | BindingFlags.Instance);
-                            object hero = heroProp?.GetValue(convMgr);
+                            object hero = convMgr.GetType().GetProperty("OneToOneConversationHero")?.GetValue(convMgr);
                             if (hero != null) return hero;
                         }
                     }
                 }
 
-                Type heroType = GetCachedType("TaleWorlds.CampaignSystem.Hero, TaleWorlds.CampaignSystem");
+                Type heroType = Type.GetType("TaleWorlds.CampaignSystem.Hero, TaleWorlds.CampaignSystem");
                 if (heroType != null)
                 {
-                    PropertyInfo heroProp = GetCachedProperty(heroType, "OneToOneConversationHero", BindingFlags.Public | BindingFlags.Static);
-                    return heroProp?.GetValue(null);
+                    return heroType.GetProperty("OneToOneConversationHero", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
                 }
             }
             catch { }
@@ -749,11 +630,10 @@ namespace AIInfluencePrism.Transport
         {
             try
             {
-                Type heroType = GetCachedType("TaleWorlds.CampaignSystem.Hero, TaleWorlds.CampaignSystem");
+                Type heroType = Type.GetType("TaleWorlds.CampaignSystem.Hero, TaleWorlds.CampaignSystem");
                 if (heroType != null)
                 {
-                    PropertyInfo heroProp = GetCachedProperty(heroType, "MainHero", BindingFlags.Public | BindingFlags.Static);
-                    return heroProp?.GetValue(null);
+                    return heroType.GetProperty("MainHero", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
                 }
             }
             catch { }
@@ -764,19 +644,17 @@ namespace AIInfluencePrism.Transport
         {
             try
             {
-                Type setType = GetCachedType("TaleWorlds.CampaignSystem.Settlements.Settlement, TaleWorlds.CampaignSystem");
+                Type setType = Type.GetType("TaleWorlds.CampaignSystem.Settlements.Settlement, TaleWorlds.CampaignSystem");
                 if (setType != null)
                 {
-                    PropertyInfo currProp = GetCachedProperty(setType, "CurrentSettlement", BindingFlags.Public | BindingFlags.Static);
-                    object curr = currProp?.GetValue(null);
+                    object curr = setType.GetProperty("CurrentSettlement", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
                     if (curr != null) return curr;
                 }
 
                 object player = ResolveMainHero();
                 if (player != null)
                 {
-                    PropertyInfo setProp = GetCachedProperty(player.GetType(), "CurrentSettlement", BindingFlags.Public | BindingFlags.Instance);
-                    return setProp?.GetValue(player);
+                    return player.GetType().GetProperty("CurrentSettlement")?.GetValue(player);
                 }
             }
             catch { }
@@ -813,7 +691,7 @@ namespace AIInfluencePrism.Transport
             if (target == null || string.IsNullOrEmpty(propertyName)) return default;
             try
             {
-                PropertyInfo pi = GetCachedProperty(target.GetType(), propertyName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                PropertyInfo pi = target.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                 if (pi != null)
                 {
                     object val = pi.GetValue(target);

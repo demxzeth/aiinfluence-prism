@@ -15,33 +15,12 @@ namespace AIInfluencePrism.PrismCore
     /// </summary>
     public sealed class SubModule : MBSubModuleBase
     {
-        public static int MainThreadId { get; private set; }
         private const float TickerFlushIntervalSeconds = 60f;
         private float _tickerNextFlushIn = TickerFlushIntervalSeconds;
-        private bool _mcmRegistered;
-
-        private void TryRegisterMcm()
-        {
-            if (_mcmRegistered) return;
-            try
-            {
-                McmProviderSettings providers = McmProviderSettings.Instance;
-                providers?.PullFromProfile();
-                McmScopeSettings scopes = McmScopeSettings.Instance;
-                scopes?.PullFromProfile();
-                _mcmRegistered = true;
-                LogSink.Always("mcm: settings registered (Providers and Scopes).");
-            }
-            catch (Exception ex)
-            {
-                LogSink.Warn("mcm: registration failed (MCM not loaded yet?): " + ex.Message);
-            }
-        }
 
         protected override void OnSubModuleLoad()
         {
             base.OnSubModuleLoad();
-            MainThreadId = System.Threading.Thread.CurrentThread.ManagedThreadId;
 
             string root = ModuleLocator.Root;
             if (root.Length == 0)
@@ -68,19 +47,34 @@ namespace AIInfluencePrism.PrismCore
             // Warm up JsonVault (pre-reads the vault file; thread-safe).
             JsonVault.GetString("_warmup", "");
 
-            // Register the MCM settings screens and sync from the current profile.
-            TryRegisterMcm();
-
             Engine.Create();
         }
+
+        private bool _uiInitialized;
 
         protected override void OnBeforeInitialModuleScreenSetAsRoot()
         {
             base.OnBeforeInitialModuleScreenSetAsRoot();
-            if (!_mcmRegistered)
+
+            if (!_uiInitialized)
             {
-                TryRegisterMcm();
+                _uiInitialized = true;
+                ChatNotices.MarkUiReady();
+
+                try
+                {
+                    McmProviderSettings providers = McmProviderSettings.Instance;
+                    providers?.PullFromProfile();
+                    McmScopeSettings scopes = McmScopeSettings.Instance;
+                    scopes?.PullFromProfile();
+                    LogSink.Always("mcm: settings synced on main menu screen.");
+                }
+                catch (Exception ex)
+                {
+                    LogSink.Warn("mcm: sync failed: " + ex.Message);
+                }
             }
+
             Engine.PrimeStep(1f); // one decent attempt on the main screen
         }
 
@@ -88,7 +82,6 @@ namespace AIInfluencePrism.PrismCore
         {
             base.OnApplicationTick(dt);
             ChatNotices.FlushPending();
-            McmUiHelpers.ProcessMainThreadActions();
             Engine.PrimeStep(dt);
 
             if (_tickerNextFlushIn > 0f)

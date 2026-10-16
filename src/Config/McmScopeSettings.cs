@@ -1210,7 +1210,20 @@ namespace AIInfluencePrism.Config
             {
                 s.Model = selected;
                 Save();
-                NotifyScopeModelProperties(id);
+
+                if (Instance != null)
+                {
+                    switch (id)
+                    {
+                        case ScopeId.Dialogue: Instance.OnPropertyChanged(nameof(DialogueModel)); break;
+                        case ScopeId.Diplomacy: Instance.OnPropertyChanged(nameof(DiplomacyModel)); break;
+                        case ScopeId.Events: Instance.OnPropertyChanged(nameof(EventsModel)); break;
+                        case ScopeId.MemoryBook: Instance.OnPropertyChanged(nameof(MemoryModel)); break;
+                        case ScopeId.BattleTactics: Instance.OnPropertyChanged(nameof(BattleModel)); break;
+                        case ScopeId.GroupConversation: Instance.OnPropertyChanged(nameof(GroupModel)); break;
+                        case ScopeId.UniqueCharacters: Instance.OnPropertyChanged(nameof(UniqueModel)); break;
+                    }
+                }
             }
         }
 
@@ -1354,40 +1367,37 @@ namespace AIInfluencePrism.Config
                                 selIdx = 0;
                             }
 
-                            McmUiHelpers.EnqueueMainThreadAction(() =>
+                            lock (ModelDropdowns)
                             {
-                                lock (ModelDropdowns)
+                                _suppressDropdownSync = true;
+                                try
                                 {
-                                    _suppressDropdownSync = true;
-                                    try
+                                    if (ModelDropdowns.TryGetValue(id, out Dropdown<string> dd) && dd != null)
                                     {
-                                        if (ModelDropdowns.TryGetValue(id, out Dropdown<string> dd) && dd != null)
+                                        dd.Clear();
+                                        foreach (string m in items)
                                         {
-                                            dd.Clear();
-                                            foreach (string m in items)
-                                            {
-                                                dd.Add(m);
-                                            }
-                                            dd.SelectedIndex = (selIdx >= 0 && selIdx < items.Count) ? selIdx : 0;
+                                            dd.Add(m);
                                         }
-                                        else
-                                        {
-                                            dd = new Dropdown<string>(items, (selIdx >= 0 && selIdx < items.Count) ? selIdx : 0);
-                                            dd.PropertyChanged += (sender, args) =>
-                                            {
-                                                SetScopeModelDropdown(id, (Dropdown<string>)sender);
-                                            };
-                                            ModelDropdowns[id] = dd;
-                                        }
+                                        dd.SelectedIndex = (selIdx >= 0 && selIdx < items.Count) ? selIdx : 0;
                                     }
-                                    finally
+                                    else
                                     {
-                                        _suppressDropdownSync = false;
+                                        dd = new Dropdown<string>(items, (selIdx >= 0 && selIdx < items.Count) ? selIdx : 0);
+                                        dd.PropertyChanged += (sender, args) =>
+                                        {
+                                            SetScopeModelDropdown(id, (Dropdown<string>)sender);
+                                        };
+                                        ModelDropdowns[id] = dd;
                                     }
                                 }
+                                finally
+                                {
+                                    _suppressDropdownSync = false;
+                                }
+                            }
 
-                                NotifyScopeModelProperties(id, items, selIdx);
-                            });
+                            NotifyScopeModelProperties(id, items, selIdx);
 
                             string preview = string.Join(", ", models.Take(4)) + (models.Count > 4 ? "..." : string.Empty);
                             ChatNotices.Show("Fetched " + models.Count + " models: " + preview,

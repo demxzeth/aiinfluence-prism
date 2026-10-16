@@ -1,11 +1,4 @@
 using System;
-using System.Reflection;
-using System.Runtime.CompilerServices;
-
-[assembly: AssemblyVersion("0.5.1.0")]
-[assembly: AssemblyFileVersion("0.5.1.0")]
-[assembly: AssemblyInformationalVersion("0.5.1")]
-[assembly: InternalsVisibleTo("AIInfluencePrism.Tests")]
 
 namespace AIInfluencePrism.Infra
 {
@@ -22,7 +15,7 @@ namespace AIInfluencePrism.Infra
         public const string ModuleId = "AIInfluencePrism";
 
         /// <summary>Human-readable version for About / diagnostics.</summary>
-        public const string VersionText = "v0.5.1";
+        public const string VersionText = "v0.5.2";
 
         /// <summary>Id of the Harmony patches.</summary>
         public const string HarmonyId = "aiinfluence.prism.hooks";

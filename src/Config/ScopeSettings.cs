@@ -233,7 +233,7 @@ namespace AIInfluencePrism.Config
                 TimeoutSeconds = TimeoutSeconds,
                 ReasoningEffort = ReasoningEffort ?? "default",
                 AntigravityCliPath = baseProfile != null ? baseProfile.AntigravityCliPath : "agy",
-                AntigravityModel = baseProfile != null ? baseProfile.AntigravityModel : "gemini-3.8-flash-high",
+                AntigravityModel = baseProfile != null ? baseProfile.AntigravityModel : "gemini-3.7-flash-high",
                 AntigravityTwoStageRequest = baseProfile != null ? baseProfile.AntigravityTwoStageRequest : false
             };
         }

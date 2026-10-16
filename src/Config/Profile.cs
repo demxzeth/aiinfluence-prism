@@ -41,7 +41,7 @@ namespace AIInfluencePrism.Config
             TimeoutSeconds = 180;
             ReasoningEffort = "default";
             AntigravityCliPath = "agy";
-            AntigravityModel = "gemini-3.8-flash-high";
+            AntigravityModel = "gemini-3.7-flash-high";
             AntigravityTwoStageRequest = true;
         }
 

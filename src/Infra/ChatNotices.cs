@@ -180,6 +180,16 @@ namespace AIInfluencePrism.Infra
         private static MethodInfo _displayMessageMethod;
         private static bool _typesResolved;
         private static bool _stylesRegistered;
+        private static volatile bool _isUiReady;
+
+        /// <summary>
+        /// Marks the TaleWorlds UI / Gauntlet system as ready for message display.
+        /// Called from OnBeforeInitialModuleScreenSetAsRoot.
+        /// </summary>
+        public static void MarkUiReady()
+        {
+            _isUiReady = true;
+        }
 
         /// <summary>
         /// Flushes queued chat notices to the TaleWorlds UI.
@@ -187,6 +197,11 @@ namespace AIInfluencePrism.Infra
         /// </summary>
         public static void FlushPending()
         {
+            if (!_isUiReady)
+            {
+                return;
+            }
+
             while (PendingNotices.TryDequeue(out QueuedNotice notice))
             {
                 TryDisplayDirect(notice.Message, notice.R, notice.G, notice.B);
@@ -247,7 +262,7 @@ namespace AIInfluencePrism.Infra
 
         private static void EnsurePrismStyles()
         {
-            if (_stylesRegistered)
+            if (!_isUiReady || _stylesRegistered)
             {
                 return;
             }
@@ -355,6 +370,11 @@ namespace AIInfluencePrism.Infra
 
         private static void TryDisplayDirect(string message, float? r = null, float? g = null, float? b = null)
         {
+            if (!_isUiReady)
+            {
+                return;
+            }
+
             try
             {
                 EnsureTypes();

@@ -129,19 +129,9 @@ namespace AIInfluencePrism.Config
                 {
                     document = JObject.Parse(text);
                 }
-                catch (Exception ex)
+                catch
                 {
-                    // Corrupt file — NEVER wipe player keys silently! Preserve a backup first before fallback.
-                    try
-                    {
-                        File.Copy(path, path + ".bak", overwrite: true);
-                        LogSink.Warn("profiles: " + PrismInfo.ProfilesFileName + " has syntax or parse errors: " + ex.Message + ". Preserved backup at " + path + ".bak before writing clean template.");
-                    }
-                    catch (Exception copyEx)
-                    {
-                        LogSink.Error("profiles: failed to backup corrupt " + path + " before overwrite: " + copyEx.Message);
-                    }
-
+                    // Corrupt file — overwrite with a clean one.
                     WriteTemplate(path);
                     return;
                 }

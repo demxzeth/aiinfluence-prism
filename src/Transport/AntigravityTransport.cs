@@ -87,10 +87,7 @@ namespace AIInfluencePrism.Transport
             string cli = ResolveCliPath(profile.AntigravityCliPath);
             string model = ResolveModel(profile);
             int timeoutSeconds = profile.TimeoutSeconds >= 10 ? profile.TimeoutSeconds : 180;
-            string effortSource = options != null && !string.IsNullOrWhiteSpace(options.ReasoningEffort)
-                ? options.ReasoningEffort
-                : profile.ReasoningEffort;
-            string effort = ResolveEffort(effortSource, model);
+            string effort = ResolveEffort(profile.ReasoningEffort);
 
             // Two-stage request: built-in for Antigravity whenever turn has split content
             if (turn != null && turn.HasSplit)
@@ -116,9 +113,21 @@ namespace AIInfluencePrism.Transport
             string stage1Prompt = "[System instruction: The following is background context, character data, game state, and rules for a video game dialogue scene. Read and memorize all information. Acknowledge with a brief confirmation; do not generate in-game dialogue yet.]\n\n"
                 + turn.SplitSystem;
 
-            string args1 = BuildCliArguments(model, effort, continueSession: false);
+            StringBuilder sb1 = new StringBuilder();
+            sb1.Append("--input-format text");
+            if (!string.IsNullOrWhiteSpace(model))
+            {
+                sb1.Append(" --model ");
+                sb1.Append(EscapeArgument(model));
+            }
+            if (!string.IsNullOrEmpty(effort))
+            {
+                sb1.Append(" --effort ");
+                sb1.Append(effort);
+            }
+            sb1.Append(" --disable-slash-commands");
 
-            ProcessResult res1 = await RunProcessAsync(cli, args1, timeoutSeconds, cancellationToken, stage1Prompt)
+            ProcessResult res1 = await RunProcessAsync(cli, sb1.ToString(), timeoutSeconds, cancellationToken, stage1Prompt)
                 .ConfigureAwait(false);
 
             if (res1.ExitCode != 0)
@@ -138,9 +147,21 @@ namespace AIInfluencePrism.Transport
             string stage2Prompt = "[System instruction: Now generate the character's in-game response to the latest message in the dialogue history below, following all formatting rules and constraints provided earlier. Do not invoke any tools or external commands.]\n\n"
                 + turn.SplitUser;
 
-            string args2 = BuildCliArguments(model, effort, continueSession: true);
+            StringBuilder sb2 = new StringBuilder();
+            sb2.Append("--continue --input-format text");
+            if (!string.IsNullOrWhiteSpace(model))
+            {
+                sb2.Append(" --model ");
+                sb2.Append(EscapeArgument(model));
+            }
+            if (!string.IsNullOrEmpty(effort))
+            {
+                sb2.Append(" --effort ");
+                sb2.Append(effort);
+            }
+            sb2.Append(" --disable-slash-commands");
 
-            ProcessResult res2 = await RunProcessAsync(cli, args2, timeoutSeconds, cancellationToken, stage2Prompt)
+            ProcessResult res2 = await RunProcessAsync(cli, sb2.ToString(), timeoutSeconds, cancellationToken, stage2Prompt)
                 .ConfigureAwait(false);
 
             if (res2.ExitCode != 0)
@@ -171,9 +192,25 @@ namespace AIInfluencePrism.Transport
             string cli, string model, string effort, int timeoutSeconds, CancellationToken cancellationToken)
         {
             string prompt = BuildRequestBody(turn, options, profile);
-            string args = BuildCliArguments(model, effort, continueSession: false);
 
-            ProcessResult res = await RunProcessAsync(cli, args, timeoutSeconds, cancellationToken, prompt)
+            StringBuilder sb = new StringBuilder();
+            sb.Append("--input-format text");
+
+            if (!string.IsNullOrWhiteSpace(model))
+            {
+                sb.Append(" --model ");
+                sb.Append(EscapeArgument(model));
+            }
+
+            if (!string.IsNullOrEmpty(effort))
+            {
+                sb.Append(" --effort ");
+                sb.Append(effort);
+            }
+
+            sb.Append(" --disable-slash-commands");
+
+            ProcessResult res = await RunProcessAsync(cli, sb.ToString(), timeoutSeconds, cancellationToken, prompt)
                 .ConfigureAwait(false);
 
             if (res.ExitCode != 0)
@@ -296,7 +333,7 @@ namespace AIInfluencePrism.Transport
                     return NormalizeModelName(profile.AntigravityModel);
                 }
             }
-            return "gemini-3.8-flash-high";
+            return "gemini-3.7-flash-high";
         }
 
         /// <summary>
@@ -304,7 +341,7 @@ namespace AIInfluencePrism.Transport
         /// </summary>
         public static string NormalizeModelName(string model)
         {
-            if (string.IsNullOrWhiteSpace(model)) return "gemini-3.8-flash-high";
+            if (string.IsNullOrWhiteSpace(model)) return "gemini-3.7-flash-high";
             string trimmed = model.Trim().Trim('"', '\'').Trim();
 
             switch (trimmed.ToLowerInvariant())
@@ -386,36 +423,10 @@ namespace AIInfluencePrism.Transport
         }
 
         /// <summary>
-        /// Checks whether the model name/id already embeds a reasoning effort tier (e.g. -low, -medium, -high, -thinking).
-        /// When true, passing --effort to agy.exe produces a CLI conflict error.
-        /// </summary>
-        public static bool ModelHasEmbeddedEffort(string model)
-        {
-            if (string.IsNullOrWhiteSpace(model)) return false;
-            string lower = model.Trim().ToLowerInvariant();
-            return lower.EndsWith("-low") ||
-                   lower.EndsWith("-medium") ||
-                   lower.EndsWith("-high") ||
-                   lower.EndsWith("-xhigh") ||
-                   lower.EndsWith("-max") ||
-                   lower.Contains("-thinking") ||
-                   lower.Contains("(low)") ||
-                   lower.Contains("(medium)") ||
-                   lower.Contains("(high)") ||
-                   lower.Contains("(thinking)");
-        }
-
-        /// <summary>
         /// Maps reasoning effort string to agy --effort value (low, medium, high, xhigh, max).
-        /// If the model already specifies reasoning effort embedded in its name/tier, returns null to avoid CLI conflict.
         /// </summary>
-        public static string ResolveEffort(string effort, string model = null)
+        public static string ResolveEffort(string effort)
         {
-            if (!string.IsNullOrEmpty(model) && ModelHasEmbeddedEffort(model))
-            {
-                return null;
-            }
-
             if (string.IsNullOrWhiteSpace(effort))
             {
                 return null;
@@ -433,38 +444,6 @@ namespace AIInfluencePrism.Transport
                 default:
                     return null;
             }
-        }
-
-        /// <summary>
-        /// Builds the command-line argument string for agy.exe, avoiding conflicts between --model and --effort.
-        /// </summary>
-        public static string BuildCliArguments(string model, string effort, bool continueSession = false)
-        {
-            StringBuilder sb = new StringBuilder();
-            if (continueSession)
-            {
-                sb.Append("--continue --input-format text");
-            }
-            else
-            {
-                sb.Append("--input-format text");
-            }
-
-            if (!string.IsNullOrWhiteSpace(model))
-            {
-                sb.Append(" --model ");
-                sb.Append(EscapeArgument(model));
-            }
-
-            string resolvedEffort = ResolveEffort(effort, model);
-            if (!string.IsNullOrEmpty(resolvedEffort) && !ModelHasEmbeddedEffort(model))
-            {
-                sb.Append(" --effort ");
-                sb.Append(resolvedEffort);
-            }
-
-            sb.Append(" --disable-slash-commands");
-            return sb.ToString();
         }
 
         /// <summary>
@@ -532,7 +511,6 @@ namespace AIInfluencePrism.Transport
                 RedirectStandardInput = (standardInput != null),
                 UseShellExecute = false,
                 CreateNoWindow = true,
-                WindowStyle = ProcessWindowStyle.Hidden,
                 StandardOutputEncoding = Encoding.UTF8,
                 StandardErrorEncoding = Encoding.UTF8
             };

@@ -107,7 +107,7 @@ namespace AIInfluencePrism.Transport
 
             string url = EndpointUrl(profile);
             string body = BuildRequestBody(turn, options, profile);
-            LogSink.Info("http: POST (stream) " + EndpointMapper.MaskUrl(url) + " (" + body.Length + " bytes).");
+            LogSink.Info("http: POST (stream) " + url + " (" + body.Length + " bytes).");
 
             using (HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, url))
             using (StringContent content = new StringContent(body, Encoding.UTF8, "application/json"))
@@ -147,7 +147,7 @@ namespace AIInfluencePrism.Transport
                     {
                         string text = await ReplyReader.ReadSseAsync(
                             reader, "choices[0].delta.content", "choices[0].text").ConfigureAwait(false);
-                        return SanitizeReply(text ?? string.Empty);
+                        return text ?? string.Empty;
                     }
                 }
             }
