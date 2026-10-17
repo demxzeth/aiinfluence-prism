@@ -24,3 +24,5 @@ deploy.ps1
 fetch-refs.ps1
 package.ps1
 NEXUS_DESCRIPTION.md
+scratch/
+

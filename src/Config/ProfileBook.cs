@@ -405,6 +405,18 @@ namespace AIInfluencePrism.Config
                 profile.AntigravityTwoStageRequest = twoStage;
             }
 
+            bool slidingWindow;
+            if (ReadBool(entry["dialogueSlidingWindowEnabled"] ?? entry["slidingWindowEnabled"], out slidingWindow))
+            {
+                profile.DialogueSlidingWindowEnabled = slidingWindow;
+            }
+
+            int? windowSize = ReadInt(entry["dialogueSlidingWindowSize"] ?? entry["slidingWindowSize"]);
+            if (windowSize.HasValue && windowSize.Value > 0)
+            {
+                profile.DialogueSlidingWindowSize = windowSize.Value;
+            }
+
             // Per-scope settings.
             JObject scopes = entry["scopes"] as JObject;
             if (scopes != null)
@@ -553,13 +565,24 @@ namespace AIInfluencePrism.Config
         private static ScopeSettings ReadScope(JObject so)
         {
             ScopeSettings s = new ScopeSettings();
-            bool enabled, timer, genImages;
+            bool enabled, timer, genImages, slidingWindow;
             ReadBool(so["enabled"], out enabled);
             ReadBool(so["timerInChat"], out timer);
             ReadBool(so["generateImages"], out genImages);
             s.Enabled = enabled;
             s.TimerInChat = timer;
             s.GenerateImages = genImages;
+
+            if (ReadBool(so["dialogueSlidingWindowEnabled"] ?? so["slidingWindowEnabled"], out slidingWindow))
+            {
+                s.DialogueSlidingWindowEnabled = slidingWindow;
+            }
+
+            int? windowSize = ReadInt(so["dialogueSlidingWindowSize"] ?? so["slidingWindowSize"]);
+            if (windowSize.HasValue && windowSize.Value > 0)
+            {
+                s.DialogueSlidingWindowSize = windowSize.Value;
+            }
 
             string imgProv = (string)so["imageProvider"];
             s.ImageProvider = !string.IsNullOrWhiteSpace(imgProv) ? imgProv.Trim() : "Default";
@@ -714,6 +737,16 @@ namespace AIInfluencePrism.Config
                 entry["antigravityTwoStageRequest"] = true;
             }
 
+            if (!profile.DialogueSlidingWindowEnabled)
+            {
+                entry["dialogueSlidingWindowEnabled"] = false;
+            }
+
+            if (profile.DialogueSlidingWindowSize != 50)
+            {
+                entry["dialogueSlidingWindowSize"] = profile.DialogueSlidingWindowSize;
+            }
+
             if (profile.Scopes != null && profile.Scopes.Count > 0)
             {
                 JObject scopes = new JObject();
@@ -729,6 +762,8 @@ namespace AIInfluencePrism.Config
                         { "imageProvider", s.ImageProvider ?? "Default" },
                         { "imageModel", s.ImageModel ?? string.Empty },
                         { "imageEndpoint", s.ImageEndpoint ?? string.Empty },
+                        { "dialogueSlidingWindowEnabled", s.DialogueSlidingWindowEnabled },
+                        { "dialogueSlidingWindowSize", s.DialogueSlidingWindowSize },
                         { "provider", Profile.Label(s.Provider) },
                         { "rootUrl", s.RootUrl ?? string.Empty },
                         { "apiKey", s.ApiKey ?? string.Empty },

@@ -4,6 +4,20 @@ All notable changes to AIInfluence Prism are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.3] - 2026-10-17
+
+### Added
+
+- **Dialogue Sliding Window**:
+  - Added configurable sliding window mechanism for dialogue history in `Dispatch.ApplySlidingWindow`, preventing token overflow and memory degradation in lengthy game sessions while strictly preserving the initial context header and instructions.
+  - Added MCM configuration options under `AIInfluence Prism: Scopes`: `Enable Dialogue Sliding Window` (toggle, default on) and `Sliding Window Size` (slider, range 15–100, default 50).
+
+### Improved
+
+- **Dynamic Multi-Stage Prompt Chunking**:
+  - Upgraded chunk size ceiling from 75k to 140,000 characters in `AntigravityTransport` for models with massive context windows.
+  - Chunks are cleanly split at newline boundaries to prevent mid-token fragmentation across multi-stage session delivery.
+
 ## [0.5.2] - 2026-10-16
 
 ### Fixed

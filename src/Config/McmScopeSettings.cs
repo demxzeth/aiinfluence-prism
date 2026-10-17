@@ -130,6 +130,16 @@ namespace AIInfluencePrism.Config
             HintText = "Image provider for dialogue scenes. Only reference-capable multimodal models (Google Gemini, Custom) are permitted to maintain character likeness.")]
         public Dropdown<string> DialogueImageProviderDropdown { get => GetScopeImageProviderDropdown(ScopeId.Dialogue); set => SetScopeImageProviderDropdown(ScopeId.Dialogue, value); }
 
+        [SettingPropertyGroup("Dialogue", GroupOrder = 1)]
+        [SettingPropertyBool("Enable Dialogue Sliding Window", Order = 15, RequireRestart = false,
+            HintText = "Limits active dialogue history to the most recent messages for much faster AI responses (~15-20s). Turn this OFF if you want the NPC to remember the entire conversation history from day one (takes longer to respond).")]
+        public bool DialogueSlidingWindowEnabled { get => Scope(ScopeId.Dialogue).DialogueSlidingWindowEnabled; set => SetScopeSlidingWindowEnabled(ScopeId.Dialogue, value); }
+
+        [SettingPropertyGroup("Dialogue", GroupOrder = 1)]
+        [SettingPropertyInteger("Sliding Window Size", 15, 100, Order = 16, RequireRestart = false,
+            HintText = "Number of recent dialogue messages to retain when sliding window is enabled.")]
+        public int DialogueSlidingWindowSize { get => Scope(ScopeId.Dialogue).DialogueSlidingWindowSize; set => SetScopeSlidingWindowSize(ScopeId.Dialogue, value); }
+
         // ─── 2. Diplomacy ─────────────────────────────────────
 
         [SettingPropertyGroup("Diplomacy", GroupOrder = 2)]
@@ -871,6 +881,8 @@ namespace AIInfluencePrism.Config
                             Instance.OnPropertyChanged(nameof(DialogueReasoningDropdown));
                             Instance.OnPropertyChanged(nameof(DialogueGenerateImages));
                             Instance.OnPropertyChanged(nameof(DialogueImageProviderDropdown));
+                            Instance.OnPropertyChanged(nameof(DialogueSlidingWindowEnabled));
+                            Instance.OnPropertyChanged(nameof(DialogueSlidingWindowSize));
                             modelProp = nameof(DialogueModel);
                             modelDdProp = nameof(DialogueModelDropdown);
                             break;
@@ -1017,6 +1029,18 @@ namespace AIInfluencePrism.Config
         {
             ScopeSettings s = Scope(id);
             if (s.GenerateImages != value) { s.GenerateImages = value; Save(); }
+        }
+
+        private static void SetScopeSlidingWindowEnabled(ScopeId id, bool value)
+        {
+            ScopeSettings s = Scope(id);
+            if (s.DialogueSlidingWindowEnabled != value) { s.DialogueSlidingWindowEnabled = value; Save(); }
+        }
+
+        private static void SetScopeSlidingWindowSize(ScopeId id, int value)
+        {
+            ScopeSettings s = Scope(id);
+            if (s.DialogueSlidingWindowSize != value) { s.DialogueSlidingWindowSize = value; Save(); }
         }
 
         private static readonly Dictionary<ScopeId, Dropdown<string>> ImageProviderDropdowns =

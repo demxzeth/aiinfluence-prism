@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
@@ -81,6 +82,172 @@ namespace AIInfluencePrism.Transport
             return trimmed;
         }
 
+        /// <summary>
+        /// Maximum characters per chunk when sending prompts to agy.exe.
+        /// Chunks are split on newline boundaries to avoid breaking dialogue lines.
+        /// Range: 130 000 - 150 000 characters (~250-300 KB in UTF-8).
+        /// </summary>
+        public const int DefaultMaxChunkChars = 140000;
+
+        private static readonly SemaphoreSlim AntigravityLock = new SemaphoreSlim(1, 1);
+
+        /// <summary>
+        /// Splits a long prompt or history text into chunks of at most maxChunkChars,
+        /// breaking strictly on newline ('\n') boundaries without cutting dialogue lines or words.
+        /// Falls back to space or hard split only if a single line exceeds maxChunkChars.
+        /// </summary>
+        public static List<string> SplitIntoChunks(string text, int maxChunkChars = DefaultMaxChunkChars)
+        {
+            List<string> chunks = new List<string>();
+            if (string.IsNullOrEmpty(text))
+            {
+                return chunks;
+            }
+
+            if (maxChunkChars <= 0)
+            {
+                maxChunkChars = DefaultMaxChunkChars;
+            }
+
+            if (text.Length <= maxChunkChars)
+            {
+                chunks.Add(text);
+                return chunks;
+            }
+
+            int startIndex = 0;
+            while (startIndex < text.Length)
+            {
+                int remaining = text.Length - startIndex;
+                if (remaining <= maxChunkChars)
+                {
+                    chunks.Add(text.Substring(startIndex));
+                    break;
+                }
+
+                int searchEnd = startIndex + maxChunkChars - 1;
+                int searchStart = Math.Min(searchEnd, text.Length - 1);
+                int searchCount = searchStart - startIndex + 1;
+
+                // Priority 1: Search backwards for newline '\n'
+                int newlineIndex = text.LastIndexOf('\n', searchStart, searchCount);
+                int splitPoint;
+
+                if (newlineIndex > startIndex)
+                {
+                    // Include the newline in the current chunk so lines are preserved cleanly
+                    splitPoint = newlineIndex + 1;
+                }
+                else
+                {
+                    // Priority 2: Fallback to space
+                    int spaceIndex = text.LastIndexOf(' ', searchStart, searchCount);
+                    if (spaceIndex > startIndex)
+                    {
+                        splitPoint = spaceIndex + 1;
+                    }
+                    else
+                    {
+                        // Priority 3: Hard cut if no delimiter exists in the window
+                        splitPoint = startIndex + maxChunkChars;
+                    }
+                }
+
+                chunks.Add(text.Substring(startIndex, splitPoint - startIndex));
+                startIndex = splitPoint;
+            }
+
+            return chunks;
+        }
+
+        /// <summary>
+        /// Builds an ordered list of prompts for multi-stage execution with agy.exe.
+        /// Chunks are generated strictly along newline boundaries with a maximum size of maxChunkChars.
+        /// </summary>
+        public static List<string> BuildMultiStagePrompts(
+            ChatTurn turn, ModelOptions options, Profile profile, int maxChunkChars = DefaultMaxChunkChars)
+        {
+            List<string> stages = new List<string>();
+            if (turn == null)
+            {
+                return stages;
+            }
+
+            if (maxChunkChars <= 0)
+            {
+                maxChunkChars = DefaultMaxChunkChars;
+            }
+
+            if (turn.HasSplit)
+            {
+                List<string> sysChunks = SplitIntoChunks(turn.SplitSystem, maxChunkChars);
+                List<string> userChunks = SplitIntoChunks(turn.SplitUser, maxChunkChars);
+
+                // Stage 1..K: Static background lore, character context, rules
+                for (int i = 0; i < sysChunks.Count; i++)
+                {
+                    string sysPrompt = "[System instruction: The following is background context, character data, game state, and rules for a video game dialogue scene"
+                        + (sysChunks.Count > 1 ? " (part " + (i + 1) + " of " + sysChunks.Count + ")" : "")
+                        + ". Read and memorize all information. Acknowledge with a brief confirmation; do not generate in-game dialogue yet.]\n\n"
+                        + sysChunks[i];
+                    stages.Add(sysPrompt);
+                }
+
+                // Intermediate history stages (all user chunks except the final one)
+                for (int i = 0; i < userChunks.Count - 1; i++)
+                {
+                    string histPrompt = "[System instruction: The following is a part of the earlier conversation history"
+                        + (userChunks.Count > 2 ? " (part " + (i + 1) + " of " + (userChunks.Count - 1) + ")" : "")
+                        + ". Read and memorize all information. Acknowledge with a brief confirmation (e.g. OK); do not generate in-game dialogue yet.]\n\n"
+                        + userChunks[i];
+                    stages.Add(histPrompt);
+                }
+
+                // Final stage (last dialogue history chunk + active prompt to generate reply)
+                if (userChunks.Count > 0)
+                {
+                    string finalPrompt = "[System instruction: Now generate the character's in-game response to the latest message in the dialogue history below, following all formatting rules and constraints provided earlier. Do not invoke any tools or external commands.]\n\n"
+                        + userChunks[userChunks.Count - 1];
+                    stages.Add(finalPrompt);
+                }
+                else if (sysChunks.Count > 0)
+                {
+                    // Fallback in case userChunks was empty
+                    stages[stages.Count - 1] = "[System instruction: Now generate the character's in-game response following all formatting rules and constraints provided earlier. Do not invoke any tools or external commands.]\n\n"
+                        + sysChunks[sysChunks.Count - 1];
+                }
+
+                return stages;
+            }
+
+            // Unsplit turn: build full prompt
+            string fullPrompt = !string.IsNullOrEmpty(turn.System)
+                ? turn.System + "\n\n" + (turn.User ?? string.Empty)
+                : turn.User ?? string.Empty;
+
+            List<string> fullChunks = SplitIntoChunks(fullPrompt, maxChunkChars);
+            if (fullChunks.Count <= 1)
+            {
+                string single = "[System instruction: You are generating responses for a video game AI dialogue system. Follow all instructions and output formats requested in the prompt. Do not invoke any tools or external commands.]\n\n" + fullPrompt;
+                stages.Add(single);
+                return stages;
+            }
+
+            for (int i = 0; i < fullChunks.Count - 1; i++)
+            {
+                string partPrompt = "[System instruction: The following is background context and history for a video game dialogue scene (part "
+                    + (i + 1) + " of " + fullChunks.Count + "). Read and memorize all information. Acknowledge with a brief confirmation (e.g. OK); do not generate in-game dialogue yet.]\n\n"
+                    + fullChunks[i];
+                stages.Add(partPrompt);
+            }
+
+            string activePrompt = "[System instruction: Now generate the character's in-game response to the latest message in the dialogue scene below, following all formatting rules and constraints provided earlier. Do not invoke any tools or external commands.]\n\n"
+                + fullChunks[fullChunks.Count - 1];
+            stages.Add(activePrompt);
+
+            return stages;
+        }
+
         public async Task<string> SendAsync(
             ChatTurn turn, ModelOptions options, Profile profile, CancellationToken cancellationToken)
         {
@@ -89,150 +256,153 @@ namespace AIInfluencePrism.Transport
             int timeoutSeconds = profile.TimeoutSeconds >= 10 ? profile.TimeoutSeconds : 180;
             string effort = ResolveEffort(profile.ReasoningEffort);
 
-            // Two-stage request: built-in for Antigravity whenever turn has split content
-            if (turn != null && turn.HasSplit)
+            List<string> stages = BuildMultiStagePrompts(turn, options, profile, DefaultMaxChunkChars);
+
+            if (stages.Count > 1)
             {
-                return await SendTwoStageAsync(
-                    turn, options, profile, cli, model, effort, timeoutSeconds, cancellationToken)
+                return await SendMultiStageAsync(
+                    stages, cli, model, effort, timeoutSeconds, cancellationToken)
                     .ConfigureAwait(false);
             }
 
-            return await SendSingleStageAsync(
-                turn, options, profile, cli, model, effort, timeoutSeconds, cancellationToken)
+            string singlePrompt = stages.Count == 1 ? stages[0] : BuildRequestBody(turn, options, profile);
+            return await SendSingleStagePromptAsync(
+                singlePrompt, cli, model, effort, timeoutSeconds, cancellationToken)
                 .ConfigureAwait(false);
         }
 
-        private async Task<string> SendTwoStageAsync(
-            ChatTurn turn, ModelOptions options, Profile profile,
+        public async Task<string> SendMultiStageAsync(
+            List<string> stages,
             string cli, string model, string effort, int timeoutSeconds, CancellationToken cancellationToken)
         {
-            LogSink.Info("antigravity: two-stage request starting (stage 1 context="
-                + turn.SplitSystem.Length + " chars, stage 2 dialogue=" + turn.SplitUser.Length + " chars)");
-
-            // Stage 1: Send static context, world info, rules and character data.
-            string stage1Prompt = "[System instruction: The following is background context, character data, game state, and rules for a video game dialogue scene. Read and memorize all information. Acknowledge with a brief confirmation; do not generate in-game dialogue yet.]\n\n"
-                + turn.SplitSystem;
-
-            StringBuilder sb1 = new StringBuilder();
-            sb1.Append("--input-format text");
-            if (!string.IsNullOrWhiteSpace(model))
+            if (stages == null || stages.Count == 0)
             {
-                sb1.Append(" --model ");
-                sb1.Append(EscapeArgument(model));
+                return string.Empty;
             }
-            if (!string.IsNullOrEmpty(effort))
-            {
-                sb1.Append(" --effort ");
-                sb1.Append(effort);
-            }
-            sb1.Append(" --disable-slash-commands");
 
-            ProcessResult res1 = await RunProcessAsync(cli, sb1.ToString(), timeoutSeconds, cancellationToken, stage1Prompt)
-                .ConfigureAwait(false);
-
-            if (res1.ExitCode != 0)
+            await AntigravityLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
             {
-                string errMsg = !string.IsNullOrWhiteSpace(res1.Error) ? res1.Error : res1.Output;
-                if (string.IsNullOrWhiteSpace(errMsg))
+                LogSink.Info("antigravity: multi-stage request starting (" + stages.Count + " stages total)");
+
+                string lastOutput = null;
+
+                for (int i = 0; i < stages.Count; i++)
                 {
-                    errMsg = "agy.exe exited with code " + res1.ExitCode;
+                    bool isInitial = (i == 0);
+                    string stagePrompt = stages[i];
+
+                    StringBuilder sb = new StringBuilder();
+                    sb.Append("--dangerously-skip-permissions");
+
+                    if (!isInitial)
+                    {
+                        sb.Append(" --continue");
+                    }
+
+                    sb.Append(" --input-format text");
+
+                    if (!string.IsNullOrWhiteSpace(model))
+                    {
+                        sb.Append(" --model ");
+                        sb.Append(EscapeArgument(model));
+                    }
+
+                    if (!string.IsNullOrEmpty(effort))
+                    {
+                        sb.Append(" --effort ");
+                        sb.Append(effort);
+                    }
+
+                    sb.Append(" --disable-slash-commands");
+
+                    LogSink.Info("antigravity: executing stage " + (i + 1) + "/" + stages.Count
+                        + " (prompt length=" + stagePrompt.Length + " chars, continue=" + (!isInitial) + ")");
+
+                    ProcessResult res = await RunProcessAsync(cli, sb.ToString(), timeoutSeconds, cancellationToken, stagePrompt)
+                        .ConfigureAwait(false);
+
+                    if (res.ExitCode != 0)
+                    {
+                        string errMsg = !string.IsNullOrWhiteSpace(res.Error) ? res.Error : res.Output;
+                        if (string.IsNullOrWhiteSpace(errMsg))
+                        {
+                            errMsg = "agy.exe exited with code " + res.ExitCode;
+                        }
+                        LogSink.Warn("antigravity stage " + (i + 1) + "/" + stages.Count + " error: " + errMsg);
+                        throw new TransportException(res.ExitCode, "Stage " + (i + 1) + " failed: " + errMsg);
+                    }
+
+                    lastOutput = res.Output;
+                    LogSink.Info("antigravity: stage " + (i + 1) + "/" + stages.Count + " completed ("
+                        + (res.Output ?? string.Empty).Length + " chars reply)");
                 }
-                LogSink.Warn("antigravity stage 1 error: " + errMsg);
-                throw new TransportException(res1.ExitCode, "Stage 1 failed: " + errMsg);
-            }
 
-            LogSink.Info("antigravity: stage 1 completed (" + (res1.Output ?? string.Empty).Length + " chars reply), starting stage 2 (--continue)");
-
-            // Stage 2: Send dialogue history and prompt for NPC response using --continue.
-            string stage2Prompt = "[System instruction: Now generate the character's in-game response to the latest message in the dialogue history below, following all formatting rules and constraints provided earlier. Do not invoke any tools or external commands.]\n\n"
-                + turn.SplitUser;
-
-            StringBuilder sb2 = new StringBuilder();
-            sb2.Append("--continue --input-format text");
-            if (!string.IsNullOrWhiteSpace(model))
-            {
-                sb2.Append(" --model ");
-                sb2.Append(EscapeArgument(model));
-            }
-            if (!string.IsNullOrEmpty(effort))
-            {
-                sb2.Append(" --effort ");
-                sb2.Append(effort);
-            }
-            sb2.Append(" --disable-slash-commands");
-
-            ProcessResult res2 = await RunProcessAsync(cli, sb2.ToString(), timeoutSeconds, cancellationToken, stage2Prompt)
-                .ConfigureAwait(false);
-
-            if (res2.ExitCode != 0)
-            {
-                string errMsg = !string.IsNullOrWhiteSpace(res2.Error) ? res2.Error : res2.Output;
-                if (string.IsNullOrWhiteSpace(errMsg))
+                if (string.IsNullOrWhiteSpace(lastOutput))
                 {
-                    errMsg = "agy.exe exited with code " + res2.ExitCode;
+                    LogSink.Warn("antigravity final stage empty output");
                 }
-                LogSink.Warn("antigravity stage 2 error: " + errMsg);
-                throw new TransportException(res2.ExitCode, "Stage 2 failed: " + errMsg);
-            }
 
-            if (string.IsNullOrWhiteSpace(res2.Output))
+                return ParseReply(lastOutput);
+            }
+            finally
             {
-                if (!string.IsNullOrWhiteSpace(res2.Error))
-                {
-                    LogSink.Warn("antigravity stage 2 empty output, stderr: " + res2.Error);
-                    throw new TransportException(0, res2.Error);
-                }
+                AntigravityLock.Release();
             }
-
-            return ParseReply(res2.Output);
         }
 
-        private async Task<string> SendSingleStageAsync(
-            ChatTurn turn, ModelOptions options, Profile profile,
+        private async Task<string> SendSingleStagePromptAsync(
+            string prompt,
             string cli, string model, string effort, int timeoutSeconds, CancellationToken cancellationToken)
         {
-            string prompt = BuildRequestBody(turn, options, profile);
-
-            StringBuilder sb = new StringBuilder();
-            sb.Append("--input-format text");
-
-            if (!string.IsNullOrWhiteSpace(model))
+            await AntigravityLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
             {
-                sb.Append(" --model ");
-                sb.Append(EscapeArgument(model));
-            }
+                StringBuilder sb = new StringBuilder();
+                sb.Append("--dangerously-skip-permissions --input-format text");
 
-            if (!string.IsNullOrEmpty(effort))
-            {
-                sb.Append(" --effort ");
-                sb.Append(effort);
-            }
-
-            sb.Append(" --disable-slash-commands");
-
-            ProcessResult res = await RunProcessAsync(cli, sb.ToString(), timeoutSeconds, cancellationToken, prompt)
-                .ConfigureAwait(false);
-
-            if (res.ExitCode != 0)
-            {
-                string errMsg = !string.IsNullOrWhiteSpace(res.Error) ? res.Error : res.Output;
-                if (string.IsNullOrWhiteSpace(errMsg))
+                if (!string.IsNullOrWhiteSpace(model))
                 {
-                    errMsg = "agy.exe exited with code " + res.ExitCode;
+                    sb.Append(" --model ");
+                    sb.Append(EscapeArgument(model));
                 }
-                throw new TransportException(res.ExitCode, errMsg);
-            }
 
-            if (string.IsNullOrWhiteSpace(res.Output))
-            {
-                if (!string.IsNullOrWhiteSpace(res.Error))
+                if (!string.IsNullOrEmpty(effort))
                 {
-                    LogSink.Warn("antigravity: empty output, stderr: " + res.Error);
-                    throw new TransportException(0, res.Error);
+                    sb.Append(" --effort ");
+                    sb.Append(effort);
                 }
-            }
 
-            return ParseReply(res.Output);
+                sb.Append(" --disable-slash-commands");
+
+                ProcessResult res = await RunProcessAsync(cli, sb.ToString(), timeoutSeconds, cancellationToken, prompt)
+                    .ConfigureAwait(false);
+
+                if (res.ExitCode != 0)
+                {
+                    string errMsg = !string.IsNullOrWhiteSpace(res.Error) ? res.Error : res.Output;
+                    if (string.IsNullOrWhiteSpace(errMsg))
+                    {
+                        errMsg = "agy.exe exited with code " + res.ExitCode;
+                    }
+                    throw new TransportException(res.ExitCode, errMsg);
+                }
+
+                if (string.IsNullOrWhiteSpace(res.Output))
+                {
+                    if (!string.IsNullOrWhiteSpace(res.Error))
+                    {
+                        LogSink.Warn("antigravity: empty output, stderr: " + res.Error);
+                        throw new TransportException(0, res.Error);
+                    }
+                }
+
+                return ParseReply(res.Output);
+            }
+            finally
+            {
+                AntigravityLock.Release();
+            }
         }
 
         public async Task<bool> ProbeAsync(Profile profile, CancellationToken cancellationToken)

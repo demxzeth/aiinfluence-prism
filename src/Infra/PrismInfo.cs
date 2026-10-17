@@ -15,7 +15,7 @@ namespace AIInfluencePrism.Infra
         public const string ModuleId = "AIInfluencePrism";
 
         /// <summary>Human-readable version for About / diagnostics.</summary>
-        public const string VersionText = "v0.5.2";
+        public const string VersionText = "v0.5.3";
 
         /// <summary>Id of the Harmony patches.</summary>
         public const string HarmonyId = "aiinfluence.prism.hooks";

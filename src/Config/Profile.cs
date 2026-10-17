@@ -43,6 +43,8 @@ namespace AIInfluencePrism.Config
             AntigravityCliPath = "agy";
             AntigravityModel = "gemini-3.7-flash-high";
             AntigravityTwoStageRequest = true;
+            DialogueSlidingWindowEnabled = true;
+            DialogueSlidingWindowSize = 50;
         }
 
         /// <summary>Display name of the profile.</summary>
@@ -95,6 +97,12 @@ namespace AIInfluencePrism.Config
 
         /// <summary>Whether to send Antigravity requests in two stages (context first, then dialogue history via --continue).</summary>
         public bool AntigravityTwoStageRequest { get; set; }
+
+        /// <summary>Whether to limit dialogue history using sliding window for faster responses.</summary>
+        public bool DialogueSlidingWindowEnabled { get; set; } = true;
+
+        /// <summary>Number of recent messages to retain when sliding window is enabled.</summary>
+        public int DialogueSlidingWindowSize { get; set; } = 50;
 
         /// <summary>Active global image generation provider: OpenAI, Google Gemini, Free (Pollinations), Custom.</summary>
         public string ImageProvider { get; set; } = "OpenAI";

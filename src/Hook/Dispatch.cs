@@ -1,5 +1,6 @@
 using System;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using AIInfluencePrism.Config;
 using AIInfluencePrism.Infra;
@@ -76,6 +77,25 @@ namespace AIInfluencePrism.Hook
                     return true;
                 }
 
+                // Dialogue Sliding Window optimization:
+                // When enabled, limits active dialogue history to the last N messages
+                // to dramatically improve response latency (~15-20s instead of 40-90s).
+                if (scope == ScopeId.Dialogue)
+                {
+                    ScopeSettings dialogueSettings = ProfileBook.Current.Scope(ScopeId.Dialogue);
+                    if (dialogueSettings.DialogueSlidingWindowEnabled && !string.IsNullOrEmpty(userPart))
+                    {
+                        int beforeLen = userPart.Length;
+                        userPart = ApplySlidingWindow(userPart, dialogueSettings.DialogueSlidingWindowSize);
+                        if (userPart.Length < beforeLen)
+                        {
+                            LogSink.Info("dispatch[Dialogue]: sliding window applied (retained last "
+                                + dialogueSettings.DialogueSlidingWindowSize + " messages, reduced history from "
+                                + beforeLen + " to " + userPart.Length + " chars)");
+                        }
+                    }
+                }
+
                 // If this is a dialogue LLM request and dialogue image generation is enabled,
                 // initiate simultaneous image generation concurrently with the text generation!
                 if (scope == ScopeId.Dialogue && ProfileBook.Current.Scope(ScopeId.Dialogue).GenerateImages)
@@ -146,6 +166,14 @@ namespace AIInfluencePrism.Hook
                 }
             }
 
+            // 1. High priority: Semantic dialogue markers in the prompt text.
+            // When dialogue markers are present, they define the exact physical boundary
+            // between static world/rules/lore context (Stage 1) and dynamic conversation history (Stage 2).
+            if (TryDeriveTextSplit(prompt, 0, out systemContent, out userContent))
+            {
+                return true;
+            }
+
             if (bestArg != null && !(bestArg is string))
             {
                 ExtractPayloadSplit(bestArg, ref cachePrefix, out systemContent, out userContent);
@@ -199,20 +227,17 @@ namespace AIInfluencePrism.Hook
             userContent = null;
             if (string.IsNullOrEmpty(prompt)) return false;
 
-            if (cachePrefix > 0 && cachePrefix < prompt.Length)
-            {
-                systemContent = prompt.Substring(0, cachePrefix).TrimEnd();
-                userContent = prompt.Substring(cachePrefix).TrimStart();
-                return true;
-            }
-
             string[] markers = new string[]
             {
                 "### ТЕКУЩАЯ ИСТОРИЯ ДИАЛОГА",
                 "### Conversation history ###",
                 "### Conversation History ###",
                 "### Group conversation ###",
-                "### Dialogue history ###"
+                "### Dialogue history ###",
+                "### CURRENT CONVERSATION HISTORY",
+                "### Conversation history",
+                "### Dialogue history",
+                "### ИСТОРИЯ ДИАЛОГА"
             };
 
             foreach (string marker in markers)
@@ -227,6 +252,13 @@ namespace AIInfluencePrism.Hook
                     userContent = prompt.Substring(split).TrimStart();
                     return true;
                 }
+            }
+
+            if (cachePrefix > 0 && cachePrefix < prompt.Length)
+            {
+                systemContent = prompt.Substring(0, cachePrefix).TrimEnd();
+                userContent = prompt.Substring(cachePrefix).TrimStart();
+                return true;
             }
 
             return false;
@@ -292,6 +324,50 @@ namespace AIInfluencePrism.Hook
                 default:
                     return Routing.Router.ClassifyChatPrompt(prompt, out string fallbackMarker);
             }
+        }
+
+        /// <summary>
+        /// Trims dialogue history to the last keepCount messages using a sliding window.
+        /// Preserves the header marker (e.g. ### Conversation history ###) and inserts
+        /// a brief omission notice before the retained recent messages.
+        /// If the total message count is less than or equal to keepCount, the text is returned unmodified.
+        /// </summary>
+        public static string ApplySlidingWindow(string userContent, int keepCount = 50)
+        {
+            if (string.IsNullOrEmpty(userContent) || keepCount <= 0)
+            {
+                return userContent;
+            }
+
+            // Find message boundaries.
+            // In AIInfluence, messages in dialogue history start on a new line with patterns like:
+            // "Name (`id`):", "I (Name, `id`):", "Player:", "You:", "[Turn N]", etc.
+            Regex messageHeaderRegex = new Regex(
+                @"(?:^|\r?\n)(?:[^\r\n]{1,80}?\s*\([^)\r\n]+?\)\s*:|(?:Player|You|User|Игрок|Собеседник|Hero|MainHero)\s*:|\[(?:Turn\s*)?\d+\])",
+                RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+            MatchCollection matches = messageHeaderRegex.Matches(userContent);
+            if (matches.Count <= keepCount)
+            {
+                return userContent;
+            }
+
+            // Target match: the one that starts the last keepCount messages
+            int targetMatchIndex = matches.Count - keepCount;
+            int cutoffIndex = matches[targetMatchIndex].Index;
+
+            // Preserve header part (before the first message)
+            int firstMsgIndex = matches[0].Index;
+            string header = userContent.Substring(0, firstMsgIndex).TrimEnd();
+
+            // Retained recent dialogue part
+            string recentPart = userContent.Substring(cutoffIndex).TrimStart('\r', '\n');
+
+            int omittedCount = targetMatchIndex;
+            string omissionNotice = "\n\n[Earlier conversation history (" + omittedCount
+                + " older messages omitted for faster response)...]\n\n";
+
+            return header + omissionNotice + recentPart;
         }
     }
 }

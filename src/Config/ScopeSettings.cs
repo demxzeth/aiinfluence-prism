@@ -23,6 +23,8 @@ namespace AIInfluencePrism.Config
             TimeoutSeconds = 180;
             TimerInChat = false;
             ReasoningEffort = "default";
+            DialogueSlidingWindowEnabled = true;
+            DialogueSlidingWindowSize = 50;
         }
 
         /// <summary>Whether this scope routes through Prism (off = AIInfluence's own backend).</summary>
@@ -51,6 +53,12 @@ namespace AIInfluencePrism.Config
 
         /// <summary>Show the response timer in chat for this scope.</summary>
         public bool TimerInChat { get; set; }
+
+        /// <summary>Whether to limit dialogue history using sliding window for faster responses.</summary>
+        public bool DialogueSlidingWindowEnabled { get; set; } = true;
+
+        /// <summary>Number of recent messages to retain when sliding window is enabled.</summary>
+        public int DialogueSlidingWindowSize { get; set; } = 50;
 
         /// <summary>Raw provider text entered in UI / config (null when unset).</summary>
         public string ProviderRaw { get; set; }
@@ -234,7 +242,9 @@ namespace AIInfluencePrism.Config
                 ReasoningEffort = ReasoningEffort ?? "default",
                 AntigravityCliPath = baseProfile != null ? baseProfile.AntigravityCliPath : "agy",
                 AntigravityModel = baseProfile != null ? baseProfile.AntigravityModel : "gemini-3.7-flash-high",
-                AntigravityTwoStageRequest = baseProfile != null ? baseProfile.AntigravityTwoStageRequest : false
+                AntigravityTwoStageRequest = baseProfile != null ? baseProfile.AntigravityTwoStageRequest : false,
+                DialogueSlidingWindowEnabled = DialogueSlidingWindowEnabled,
+                DialogueSlidingWindowSize = DialogueSlidingWindowSize > 0 ? DialogueSlidingWindowSize : 50
             };
         }
     }
