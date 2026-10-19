@@ -78,10 +78,6 @@ Requires .NET SDK 8+ and a Bannerlord installation for reference assemblies.
 
 ## Shout outs
 
-- Thanks to the **AIInfluence** author for the amazing mod this builds on, and
-  for keeping NPC dialogue alive in Bannerlord.
-- Thanks to the **Player2** team for a great always-local AI companion with a
-  simple, open API.
 - Thanks to the **Bannerlord Mod Manager (MCM)** and **Bannerlord Harmony**
   maintainers — without them, in-game settings and patching would be a nightmare.
 - Thanks to everyone in the Bannerlord modding community for the help,
