@@ -15,10 +15,6 @@ Group Conversation, Unique AI characters** — gets its own connection profile,
 so you can use a different provider, model and parameters for every situation,
 or switch a single scenario back to AIInfluence's own backend.
 
-**Playing with Player2?** Simply leave **all fields empty** for the scope or
-profile you use — Prism auto-detects Player2 and handles everything for you.
-No API key, no address, no model needed.
-
 ---
 
 ## Installation instructions
@@ -67,8 +63,7 @@ Requires .NET SDK 8+ and a Bannerlord installation for reference assemblies.
 - **Mount & Blade II: Bannerlord** (any version with the `AIInfluence` mod).
 - **AIInfluence** — from Steam Workshop (required).
 - **Bannerlord Harmony** — from Steam Workshop (required).
-- **Bannerlord Mod Manager (MCM)** — from Steam Workshop (required).
-- **(Optional) Player2** — the local app or cloud account, if you use that provider.
+- **Bannerlord Mod Manager (MCM)** — from Steam Workshop (required)
 - **.NET SDK 8+** only if building from source.
 
 > No reference assemblies are bundled — they are fetched from your game install
