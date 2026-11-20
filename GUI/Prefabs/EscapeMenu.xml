@@ -1,0 +1,83 @@
+<Prefab>
+  <Constants>
+    <Constant Name="EscapeMenu.Background.Width" BrushName="EscapeMenu.Background" BrushLayer="Default" BrushValueType="Width"/>
+    <Constant Name="EscapeMenu.Background.Height" BrushName="EscapeMenu.Background" BrushLayer="Default" BrushValueType="Height"/>
+
+    <Constant Name="ContextButton.Width" BrushName="ButtonBrush2" BrushLayer="Default" BrushValueType="Width"/>
+    <Constant Name="ContextButton.Height" BrushName="ButtonBrush2" BrushLayer="Default" BrushValueType="Height"/>
+  </Constants>
+  <Window>
+    <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent" Sprite="BlankWhiteSquare_9" Color="#000000FF" AlphaFactor="0.4">
+      <Children>
+
+        <NavigationScopeTargeter ScopeID="EscapeMenuItemsScope" ScopeParent="..\EscapeMenu" ScopeMovements="Vertical" HasCircularMovement="true" IsDefaultNavigationScope="true" />
+        <Widget Id="EscapeMenu" WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="!EscapeMenu.Background.Width" SuggestedHeight="880" HorizontalAlignment="Center" VerticalAlignment="Center" Sprite="SPGeneral\EscapeMenu\escape_panel">
+          <Children>
+            <NavigatableListPanel Id="ButtonsContainer" DataSource="{MenuItems}" StackLayout.LayoutMethod="VerticalTopToBottom" WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren" MarginTop="100" MarginBottom="60" MinIndex="0" MaxIndex="100" >
+              <ItemTemplate>
+                <Widget WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="!ContextButton.Width" SuggestedHeight="!ContextButton.Height" HorizontalAlignment="Center" VerticalAlignment="Center" MarginBottom="18" UseSiblingIndexForNavigation="true">
+                  <Children>
+                    
+                    <EscapeMenuButtonWidget DoNotPassEventsToChildren="true" Command.Click="ExecuteAction" WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent" HorizontalAlignment="Center" VerticalAlignment="Center" Brush="ButtonBrush2" PositiveBehaviorBrush="ButtonBrush1" IsDisabled="@IsDisabled" IsPositiveBehaviored="@IsPositiveBehaviored">
+                      <Children>
+                        <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent" PositionYOffset="1" Text="@ActionText" Brush="OverlayPopup.ButtonText" ClipContents="false"/>
+                      </Children>
+                    </EscapeMenuButtonWidget>
+
+                    <Widget DoNotPassEventsToChildren="true" WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent" IsVisible="@IsDisabled">
+                      <Children>
+                        <HintWidget DataSource="{DisabledHint}" WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent" Command.HoverBegin="ExecuteBeginHint" Command.HoverEnd="ExecuteEndHint"/>
+                      </Children>
+                    </Widget>
+                    
+                  </Children>
+                </Widget>
+              </ItemTemplate>
+            </NavigatableListPanel>
+          </Children>
+        </Widget>
+
+        <ListPanel WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren" StackLayout.LayoutMethod="VerticalTopToBottom" HorizontalAlignment="Left" VerticalAlignment="Center" MarginLeft="165" >
+          <Children>
+            <!-- Tips -->
+            <Widget Id="TipsContainer" DataSource="{Tips}" WidthSizePolicy="CoverChildren" HeightSizePolicy="Fixed" SuggestedHeight="300" >
+              <Children>
+                <NavigationScopeTargeter ScopeID="EscapeMenuTipsScope" ScopeParent="..\." ScopeMovements="Horizontal" HasCircularMovement="false" IsScopeEnabled="@NavigationButtonsEnabled" />
+                <BrushWidget WidthSizePolicy="Fixed" HeightSizePolicy="CoverChildren" SuggestedWidth="450" HorizontalAlignment="Center" VerticalAlignment="Center" Brush="EscapeMenu.GameTip">
+                  <Children>
+                    <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren" Brush="GameTip.Title.Text" Text="@GameTipTitle" HorizontalAlignment="Center" MarginTop="10" ClipContents="false"/>
+                    <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed" IsEnabled="false"/>
+                    <RichTextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren" MinHeight="225" MarginTop="60" MarginBottom="15" MarginRight="55" MarginLeft="55" VerticalAlignment="Center" Brush="GameTip.Text" Text="@CurrentTip"/>
+                    <ButtonWidget WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="43" SuggestedHeight="56" HorizontalAlignment="Left" VerticalAlignment="Center" Command.Click="ExecutePreviousTip" Brush="ButtonRightArrowBrush1" MarginLeft="3" IsVisible="@NavigationButtonsEnabled" GamepadNavigationIndex="0"/>
+                    <ButtonWidget WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="43" SuggestedHeight="56" HorizontalAlignment="Right" VerticalAlignment="Center" Command.Click="ExecuteNextTip" Brush="ButtonLeftArrowBrush1" MarginRight="3" IsVisible="@NavigationButtonsEnabled" GamepadNavigationIndex="1"/>
+                  </Children>
+                </BrushWidget>
+              </Children>
+            </Widget>
+
+            <!--Campaign Scenario & Seed info (shown below the tip box for Advanced Starting Options campaigns)-->
+            <BrushWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren" Brush="EscapeMenu.StartingOption" HorizontalAlignment="Left" VerticalAlignment="Center" MarginTop="50" IsVisible="@ShowCampaignInfo">
+              <Children>
+                <NavigationScopeTargeter ScopeID="EscapeMenuStartingOptionsScope" ScopeParent="..\." ScopeMovements="Horizontal" HasCircularMovement="false" />
+                <ListPanel WidthSizePolicy="Fixed" HeightSizePolicy="CoverChildren" SuggestedWidth="380" StackLayout.LayoutMethod="VerticalTopToBottom" MarginLeft="35" MarginTop="10" MarginRight="35" MarginBottom="25" >
+                  <Children>
+                    <RichTextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren" Brush="EscapeMenu.StartingOption.Title.Text" Text="@StartingOptionsTitle" HorizontalAlignment="Center" MarginBottom="15" />
+                    <RichTextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren" Brush="EscapeMenu.StartingOption.Text" Text="@StartScenarioText" HorizontalAlignment="Center" MarginBottom="10" />
+                    <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren" StackLayout.LayoutMethod="HorizontalLeftToRight">
+                      <Children>
+                        <RichTextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren" Brush="EscapeMenu.StartingOption.Text" Text="@StartSeedText" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        <ButtonWidget WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="18" SuggestedHeight="18" VerticalAlignment="Center" MarginLeft="10" Brush="EscapeMenu.StartingOption.Copy.Button" Command.Click="ExecuteCopyGameSeed" GamepadNavigationIndex="0" />
+                        <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren" MarginLeft="15" Brush="EscapeMenu.StartingOption.Copied.Text" HorizontalAlignment="Center" VerticalAlignment="Center" Text="@CopiedText" />
+                      </Children>
+                    </ListPanel>
+                  </Children>
+                </ListPanel>
+              </Children>
+            </BrushWidget>
+          </Children>
+        </ListPanel>
+
+      </Children>
+    </Widget>
+  </Window>
+</Prefab>

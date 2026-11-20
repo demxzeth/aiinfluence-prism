@@ -1,0 +1,9 @@
+Y:\Prism 1.0.0\src\AIInfluencePrism\obj\Release\AIInfluencePrism.csproj.AssemblyReference.cache
+Y:\Prism 1.0.0\src\AIInfluencePrism\obj\Release\AIInfluencePrism.GeneratedMSBuildEditorConfig.editorconfig
+Y:\Prism 1.0.0\src\AIInfluencePrism\obj\Release\AIInfluencePrism.AssemblyInfoInputs.cache
+Y:\Prism 1.0.0\src\AIInfluencePrism\obj\Release\AIInfluencePrism.AssemblyInfo.cs
+Y:\Prism 1.0.0\src\AIInfluencePrism\obj\Release\AIInfluencePrism.csproj.CoreCompileInputs.cache
+Y:\Prism 1.0.0\bin\Win64_Shipping_Client\AIInfluencePrism.dll
+Y:\Prism 1.0.0\bin\Win64_Shipping_Client\AIInfluencePrism.pdb
+Y:\Prism 1.0.0\src\AIInfluencePrism\obj\Release\AIInfluencePrism.dll
+Y:\Prism 1.0.0\src\AIInfluencePrism\obj\Release\AIInfluencePrism.pdb
