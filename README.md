@@ -27,7 +27,7 @@ or switch a single scenario back to AIInfluence's own backend.
 3. **Enable** `AIInfluence Prism` in the launcher — load it **after** AIInfluence.
 4. **Start the game**, open `Options → AIInfluence Prism → Open WebUI settings page`, pick a provider for
    each scenario and press **Test connection to provider** (or **to model**).
-                   OR
+                               OR
 4. **Enter your campaign**, press Esc → Prism Settings. It will open WebUI page with settings
 5. Done — Prism intercepts AI requests automatically and shows a live timer in chat.
 
@@ -43,7 +43,7 @@ Requires .NET SDK 8+ and a Bannerlord installation for reference assemblies.
 
 ## Caution
 
-Currently Prism is not updating, but if you having issues with the mod - feel free to open new issue on GitHub or DM me on discord (@demxzeth)
+Currently Prism is not updating, but if you having issues with the mod - feel free to open new issue on GitHub or DM me on discord (@demxzeth).
 Will gladly help you
 
 ---
