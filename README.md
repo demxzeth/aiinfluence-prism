@@ -25,10 +25,7 @@ or switch a single scenario back to AIInfluence's own backend.
 2. **Copy** the `AIInfluencePrism` folder into
    `Mount & Blade II Bannerlord/Modules/`.
 3. **Enable** `AIInfluence Prism` in the launcher — load it **after** AIInfluence.
-4. **Start the game**, open `Options → AIInfluence Prism → Open WebUI settings page`, pick a provider for
-   each scenario and press **Test connection to provider** (or **to model**).
-                               OR
-4. **Enter your campaign**, press Esc → Prism Settings. It will open WebUI page with settings
+4. **Enter your campaign**, press Esc → Prism Settings. It will open WebUI page with settings and configure how you want it/what backend to use.
 5. Done — Prism intercepts AI requests automatically and shows a live timer in chat.
 
 ### Building from source
@@ -54,7 +51,6 @@ Will gladly help you
 - **AIInfluence** — required.
 - **Bannerlord Harmony** — from Steam Workshop (required).
 - **Bannerlord Mod Manager (MCM)** — from Steam Workshop (required)
-- 
 - **.NET SDK 8+** only if building from source.
 
 > No reference assemblies are bundled — they are fetched from your game install
